@@ -707,19 +707,22 @@
   function init() {
     scene = new THREE.Scene();
 
-    // Sky dome — hemisphere with gradient texture mapped inside
+    // Sky dome — clear-day gradient: deep zenith blue easing to a bright horizon
+    // haze, then a soft ground band. Also feeds the PMREM environment, so a nicer
+    // gradient means nicer reflections on floors and glass.
     skyCanvas = document.createElement('canvas');
-    skyCanvas.width = 4; skyCanvas.height = 512;
+    skyCanvas.width = 8; skyCanvas.height = 1024;
     const cx = skyCanvas.getContext('2d')!;
-    const grad = cx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0, '#4a90d9');
-    grad.addColorStop(0.3, '#87ceeb');
-    grad.addColorStop(0.5, '#b8ddf0');
-    grad.addColorStop(0.55, '#f0ece4');
-    grad.addColorStop(0.7, '#d4cfc4');
-    grad.addColorStop(1.0, '#b8b0a0');
+    const grad = cx.createLinearGradient(0, 0, 0, 1024);
+    grad.addColorStop(0.00, '#2f6fc4'); // zenith
+    grad.addColorStop(0.28, '#5aa0e0');
+    grad.addColorStop(0.45, '#9fccee');
+    grad.addColorStop(0.50, '#d8ecf7'); // horizon haze
+    grad.addColorStop(0.52, '#eef1ee');
+    grad.addColorStop(0.62, '#dcd7cc');
+    grad.addColorStop(1.00, '#b6ad9c'); // ground band
     cx.fillStyle = grad;
-    cx.fillRect(0, 0, 4, 512);
+    cx.fillRect(0, 0, 8, 1024);
     skyTexture = ownTexture(new THREE.CanvasTexture(skyCanvas));
     // Use as scene background (maps onto equirectangular projection)
     skyTexture.mapping = THREE.EquirectangularReflectionMapping;
@@ -1061,6 +1064,46 @@
   /** Max supported anisotropy for crisp textures at grazing angles; safe fallback. */
   function maxAnisotropy(): number {
     return renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
+  }
+
+  /** Build a gentle normal map from a texture canvas so surfaces catch light with
+   *  subtle relief (grout lines, wood grain) instead of looking perfectly flat. */
+  function normalMapFromCanvas(source: HTMLCanvasElement, strength = 1.4): THREE.CanvasTexture | null {
+    try {
+      const w = source.width, h = source.height;
+      const sctx = source.getContext('2d');
+      if (!sctx || w === 0 || h === 0) return null;
+      const src = sctx.getImageData(0, 0, w, h).data;
+      const lum = (x: number, y: number) => {
+        const xi = ((x % w) + w) % w, yi = ((y % h) + h) % h;
+        const i = (yi * w + xi) * 4;
+        return (src[i] * 0.299 + src[i + 1] * 0.587 + src[i + 2] * 0.114) / 255;
+      };
+      const out = document.createElement('canvas');
+      out.width = w; out.height = h;
+      const octx = out.getContext('2d')!;
+      const img = octx.createImageData(w, h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const dx = (lum(x - 1, y) - lum(x + 1, y)) * strength;
+          const dy = (lum(x, y - 1) - lum(x, y + 1)) * strength;
+          const nz = 1;
+          const len = Math.hypot(dx, dy, nz) || 1;
+          const i = (y * w + x) * 4;
+          img.data[i] = (dx / len * 0.5 + 0.5) * 255;
+          img.data[i + 1] = (dy / len * 0.5 + 0.5) * 255;
+          img.data[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+          img.data[i + 3] = 255;
+        }
+      }
+      octx.putImageData(img, 0, 0);
+      const tex = ownTexture(new THREE.CanvasTexture(out));
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.anisotropy = maxAnisotropy();
+      return tex;
+    } catch {
+      return null;
+    }
   }
 
   function buildStraightStairRun(group: THREE.Group, mat: THREE.MeshStandardMaterial, sideMat: THREE.MeshStandardMaterial, width: number, depth: number, riserCount: number, riserHeight: number, offsetX: number, offsetY: number, offsetZ: number) {
@@ -1508,9 +1551,12 @@
       }
 
       // Glass panes (4 quadrants)
-      const glassMat = new THREE.MeshStandardMaterial({
-        color: 0xa8d8ea, transparent: true, opacity: 0.3,
-        roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide
+      // Physical glass: transmission + low roughness gives real see-through panes
+      // that pick up the environment reflections instead of a flat blue tint.
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: 0xdff1f7, transparent: true, opacity: 0.28,
+        roughness: 0.04, metalness: 0, transmission: 0.85, ior: 1.5,
+        thickness: 2, envMapIntensity: 1.0, side: THREE.DoubleSide,
       });
       const halfW = (win.width - mullionW) / 2;
       const halfH = (effectiveWinH - mullionW) / 2;
@@ -1603,8 +1649,12 @@
           // Tile every 200cm — now UVs are 0-1, so repeat = room size / tile size
           const tileSizeCm = 200;
           tex.repeat.set(roomW / tileSizeCm, roomH / tileSizeCm);
+          const normalTex = normalMapFromCanvas(floorCanvas, 1.2);
+          if (normalTex) normalTex.repeat.copy(tex.repeat);
           material = new THREE.MeshStandardMaterial({
             map: tex,
+            normalMap: normalTex ?? undefined,
+            normalScale: normalTex ? new THREE.Vector2(0.5, 0.5) : undefined,
             roughness: floorMat.roughness ?? 0.8,
             metalness: 0.05,
             envMapIntensity: 0.5,

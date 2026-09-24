@@ -40,6 +40,7 @@ describe('vaastu templates', () => {
 
   it('places rooms in correct absolute zone cells', () => {
     // NE must be top-right, SW bottom-left, SE bottom-right, NW top-left.
+    // (col 0=West..2=East, row 0=North..2=South; +y is South.)
     expect(__test.ZONE_CELL.NE).toEqual([2, 0]);
     expect(__test.ZONE_CELL.SW).toEqual([0, 2]);
     expect(__test.ZONE_CELL.SE).toEqual([2, 2]);

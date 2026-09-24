@@ -86,8 +86,22 @@ function buildFloor(
   facing: Facing,
   includeStair: boolean,
 ): Floor {
-  const colX = [0, W / 3, (2 * W) / 3, W];
-  const rowY = [0, H / 3, (2 * H) / 3, H];
+  // Weighted grid instead of equal thirds. This keeps rooms in sensible
+  // proportions on narrow plots (e.g. a 50x39 corner) rather than long thin strips.
+  // Columns W->E; rows N->S. South band is largest (master SW + kitchen SE need
+  // area); the North service band (pooja/bath) is smallest.
+  const colWeights = [0.36, 0.30, 0.34]; // West, Centre, East
+  const rowWeights = [0.30, 0.32, 0.38]; // North, Centre, South
+  const cumulative = (weights: number[], total: number): number[] => {
+    const sum = weights.reduce((a, b) => a + b, 0);
+    const out = [0];
+    let acc = 0;
+    for (const w of weights) { acc += (w / sum) * total; out.push(acc); }
+    out[out.length - 1] = total; // guard against float drift
+    return out;
+  };
+  const colX = cumulative(colWeights, W);
+  const rowY = cumulative(rowWeights, H);
 
   const walls: Wall[] = [];
   const doors: Door[] = [];
