@@ -193,6 +193,10 @@
   </div>
 
   <div class="max-w-5xl mx-auto px-6 py-8">
+    <a href={`${base}/house-design`} class="mb-6 flex items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+      <div><strong class="block text-lg">Your family home · 3D concept</strong><span class="text-sm text-emerald-800">Independent homes, parking, Mallanna shrine and outdoor Patnam. Explore your fixed brief on the land.</span></div>
+      <span aria-hidden="true" class="text-2xl">↗</span>
+    </a>
     {#if duplicating}<p role="status" class="mb-4 text-sm text-gray-500">{$t('library.duplicating')}</p>{/if}
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500">
       <p>{$t('library.local')}</p>

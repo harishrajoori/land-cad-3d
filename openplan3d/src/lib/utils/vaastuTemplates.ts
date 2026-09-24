@@ -217,7 +217,8 @@ function firstProgram(): RoomSpec[] {
 const PROPERTIES: PropertySpec[] = [
   {
     name: 'Property 1 — West 80×50 (Vaastu)',
-    facing: 'W', widthFt: 80, depthFt: 50, location: 'Karimnagar',
+    // West frontage is 80 ft (N-S); its 50 ft depth runs E-W.
+    facing: 'W', widthFt: 50, depthFt: 80, location: 'Karimnagar',
     ground: groundProgram(), first: firstProgram(),
   },
   {
