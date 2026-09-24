@@ -1,6 +1,6 @@
 # Land CAD 3D — Vaastu Home Design & Walkthrough
 
-Tools to explore plots, auto-lay-out a Vaastu-compliant home (G+1), walk through
+Tools to explore plots, generate a schematic home (G+1) using Vaastu preferences, walk through
 it in 3D, and export plans for your engineer and Vaastu consultant.
 
 This repo now has **two parts**:
@@ -54,10 +54,16 @@ the property spec files.
 
 ## Honest scope
 
-Both are **decision/exploration** tools. Layouts are Vaastu-correct in placement and
-scale-accurate, but schematic — not structurally engineered, and not photorealistic
-on their own. Validate structure, plumbing, and local codes with a professional, and
-confirm Vaastu specifics with a local Karimnagar consultant, before building.
+Both are **decision/exploration** tools. The Vaastu templates are preliminary
+zone-based sketches, not validated house designs. They currently omit setbacks
+and internal doors, overlap the south bedroom with stairs, and do not preserve all
+room preferences from the saved property files. Dimensions use real units, but
+this does not establish usability, Vaastu compliance, or construction readiness.
+Validate circulation, structure, services, local requirements, and your chosen
+Vaastu preferences with your engineer and consultant.
+
+See [the house planning and engineer discussion brief](DESIGN-BRIEF.md) for
+recorded requirements, unresolved decisions, and the next implementation priorities.
 
 ## Licenses & attribution
 

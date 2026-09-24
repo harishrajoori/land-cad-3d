@@ -26,10 +26,34 @@
     "corner": false
   },
   "program": {
+    "requirementsProfile": {
+      "id": "family-home",
+      "version": 1,
+      "repositoryPath": "requirements/home-requirements.json",
+      "notes": "Shared house brief independent of this plot. The inline program is a property-specific snapshot; current renderers do not resolve this reference automatically."
+    },
     "structure": "G+1",
     "familySplit": {
       "ground": "Self + family",
       "first": "Brother + family"
+    },
+    "access": {
+      "arrangement": "independent",
+      "separateEntrances": true,
+      "firstFloorDedicatedStair": true,
+      "sharedInternalAccess": false,
+      "notes": "Owner confirmed independent access for both homes. Reach the first-floor entrance and dedicated staircase from outside without passing through the ground-floor home. Final stair position and gate arrangement remain to be designed."
+    },
+    "parking": {
+      "cars": 2,
+      "twoWheelers": 2,
+      "scope": "Total across both households",
+      "notes": "Owner confirmed vehicle counts. Vehicle sizes, allocation between households, covered parking, and gate arrangement remain to be designed. Keep access to both home entrances and the dedicated upstairs staircase clear when all vehicles are parked."
+    },
+    "outdoorPatnam": {
+      "location": "Outside, in front of the home",
+      "purpose": "Clear floor space to draw Patnam for Mallanna worship",
+      "notes": "Owner confirmed Patnam takes place outside the pooja room. Front corresponds to the west road side of this plot. Required drawing area and surrounding space remain to be sized. Coordinate with parking and both households' access; any temporary parking relocation needs agreement."
     },
     "shared": ["Garden", "Children play space"],
     "vaastuStandard": "South-Indian Vaastu (Telangana). Confirm with a local Karimnagar consultant.",
@@ -43,9 +67,26 @@
         { "name": "Kitchen", "zone": "SE" },
         { "name": "Dining", "zone": "W" },
         { "name": "Daily Pooja", "zone": "NE" },
-        { "name": "Special Pooja (occasional, large)", "zone": "NE", "notes": "Big room, special-day usage" },
+        {
+          "name": "Mallanna Pooja Room (occasional)",
+          "zone": "NE",
+          "deity": "Mallanna",
+          "capacityPeople": 4,
+          "patnamInside": false,
+          "shrine": {
+            "raisedPlatform": true,
+            "tableLikeSurface": true,
+            "pandal": {
+              "pillarCount": 4,
+              "decoration": true
+            },
+            "prasadamOfferingLocation": "In front of the deity",
+            "notes": "Owner described elevated floor, a table-like arrangement, and a decorated four-pillar pandal. Exact heights, sizes, materials, and whether the table is separate from the platform remain to be designed. Pandal pillars are shrine features, not assumed building columns."
+          },
+          "notes": "Provide usable space for four people in addition to the shrine, pillars, and prasadam offerings. Patnam is outside in front of the home. Retain the separate daily pooja requirement. North-east is the existing preference; overall room dimensions, deity facing, and whether four includes the pujari remain undecided."
+        },
         { "name": "Common Bathroom", "zone": "NW" },
-        { "name": "Staircase to 1st floor", "zone": "S" }
+        { "name": "Independent staircase to 1st floor", "zone": "S", "notes": "Dedicated access from outside; not part of the ground-floor home's internal circulation. Position provisional." }
       ]
     },
     "firstFloor": {

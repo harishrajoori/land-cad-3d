@@ -2,6 +2,21 @@
 
 Each `.json` file here is one saved land/plot design you can review later.
 
+## Shared house requirements
+
+[../requirements/home-requirements.json](../requirements/home-requirements.json)
+holds the house brief that stays fixed across property options. Plot dimensions,
+facing, roads, and site-specific allocations remain in each property file.
+Property 1 links to the profile through `program.requirementsProfile` and retains
+an inline program snapshot for compatibility. Other saved properties are older
+snapshots; their inline room programs have not been updated to the latest brief.
+
+The profile is a planning record, not an importable plot or OpenPlan3D project.
+Current renderers do not resolve or enforce it automatically. Until that bridge
+is implemented, keep property snapshots aligned explicitly when preparing a new
+concept. Changing plot dimensions must not silently reduce the fixed requirements;
+report a fit conflict instead.
+
 ## How it works
 
 - In the app, enter a **plot name** and click **Save** to store the design in your browser (persists across refreshes).

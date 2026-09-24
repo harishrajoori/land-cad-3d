@@ -8,6 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
 </head>
 <body class="overflow-hidden m-0 p-0 bg-gray-900 text-white font-sans antialiased selection:bg-blue-500/30">
     <!-- Labels Overlay for 3D Text -->
@@ -269,7 +270,16 @@
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
             document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            if (THREE.RoomEnvironment) {
+                const pmremGenerator = new THREE.PMREMGenerator(renderer);
+                pmremGenerator.compileEquirectangularShader();
+                scene.environment = pmremGenerator.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
+            }
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.target.set(40, 0, -40);
@@ -278,12 +288,13 @@
             controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
 
             // Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
             dirLight.position.set(100, 200, 50);
             dirLight.castShadow = true;
+            dirLight.shadow.bias = -0.0005;
             dirLight.shadow.mapSize.width = 2048;
             dirLight.shadow.mapSize.height = 2048;
             dirLight.shadow.camera.left = -100;
@@ -720,15 +731,15 @@
             scene.add(houseGroup);
             sceneElements.push(houseGroup);
             
-            const extWallMat = new THREE.MeshStandardMaterial({color: 0xefedea, roughness: 0.9});
-            const intWallMat = new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 1.0});
+            const extWallMat = new THREE.MeshPhysicalMaterial({color: 0xefedea, roughness: 0.8, clearcoat: 0.1});
+            const intWallMat = new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 0.9});
             const glassMat = new THREE.MeshPhysicalMaterial({
                 color: 0x88ccff, transmission: 0.9, opacity: 1, transparent: true,
-                roughness: 0.1, ior: 1.5, thickness: 0.1
+                roughness: 0.1, ior: 1.5, thickness: 0.1, clearcoat: 1.0
             });
-            const floorWoodMat = new THREE.MeshStandardMaterial({color: 0x8b5a2b, roughness: 0.6});
-            const floorTileMat = new THREE.MeshStandardMaterial({color: 0xe2e8f0, roughness: 0.2});
-            const floorCarpetMat = new THREE.MeshStandardMaterial({color: 0x4a5568, roughness: 0.9});
+            const floorWoodMat = new THREE.MeshPhysicalMaterial({color: 0x8b5a2b, roughness: 0.3, clearcoat: 0.5, clearcoatRoughness: 0.2});
+            const floorTileMat = new THREE.MeshPhysicalMaterial({color: 0xe2e8f0, roughness: 0.1, metalness: 0.1, clearcoat: 0.8});
+            const floorCarpetMat = new THREE.MeshStandardMaterial({color: 0x4a5568, roughness: 1.0});
 
             // In walk mode we always want full-height walls (can't see over / walk through).
             const wallHeight = (viewMode === 'walk') ? 11 : (config.cutaway ? 4.5 : 11);
@@ -926,6 +937,15 @@
                         w: xs[j+1] - xs[j],
                         h: ys[i+1] - ys[i]
                     });
+
+                    // Interior Light
+                    const pLight = new THREE.PointLight(0xfff5e6, 0.4, 25);
+                    pLight.position.set(cx, wallHeight - 1, -cy);
+                    if (viewMode === 'walk') {
+                        pLight.castShadow = true;
+                        pLight.shadow.bias = -0.001;
+                    }
+                    houseGroup.add(pLight);
                 }
             }
 

@@ -1,0 +1,87 @@
+{
+  "schema": "land-cad-3d/home-requirements",
+  "version": 1,
+  "id": "family-home",
+  "name": "Fixed family home requirements",
+  "scope": "Reuse across property options independently of plot dimensions. Change requirements only when the owner explicitly revises them.",
+  "fixed": {
+    "structure": "G+1",
+    "households": {
+      "ground": "Self + family",
+      "first": "Brother + family"
+    },
+    "access": {
+      "separateEntrances": true,
+      "firstFloorDedicatedStair": true,
+      "sharedInternalAccess": false,
+      "firstFloorReachableWhileGroundHomeLocked": true
+    },
+    "parking": {
+      "cars": 2,
+      "twoWheelers": 2,
+      "scope": "Total across both households"
+    },
+    "roomProgram": {
+      "ground": {
+        "bedrooms": 3,
+        "spaces": ["Living / hall", "Kitchen", "Dining", "Daily pooja", "Mallanna pooja room", "Common bathroom"]
+      },
+      "first": {
+        "bedrooms": 2,
+        "spaces": ["Living / hall", "Kitchen", "Bathroom"]
+      },
+      "basis": "Existing saved household program retained as the baseline; extra rooms and bathroom counts remain undecided."
+    },
+    "mallannaPooja": {
+      "capacityPeople": 4,
+      "separateFromDailyPooja": true,
+      "raisedShrinePlatform": true,
+      "tableLikeSurface": true,
+      "pandal": { "pillarCount": 4, "decorated": true },
+      "prasadamSpace": "In front of the deity",
+      "peopleSpaceExcludesShrineAndOfferings": true,
+      "patnamInside": false
+    },
+    "outdoorPatnam": {
+      "location": "Outside, in front of the home",
+      "clearDrawingSpace": true,
+      "orientation": "Relative to the home's front, not a fixed compass direction"
+    },
+    "outdoorSpaces": ["Garden", "Children's play space"],
+    "designApproach": {
+      "localStyle": true,
+      "vaastuFollowing": true,
+      "notes": "Retain the owner's local-style and Vaastu requirements across plots; detailed style and consultant-specific rules remain to be agreed."
+    }
+  },
+  "plotSpecific": [
+    "Boundary dimensions and shape",
+    "Surveyed north bearing and road-facing direction",
+    "Road positions and widths",
+    "Location and applicable local requirements",
+    "Setbacks and buildable envelope",
+    "Building footprint and room dimensions",
+    "Entrance, staircase and parking positions",
+    "Garden and play-space areas",
+    "Outdoor Patnam dimensions and its relationship to parking",
+    "Shrine platform, table and pandal dimensions"
+  ],
+  "unresolved": [
+    "Extra rooms, attached bathrooms, utility, storage, balcony and lift provision",
+    "Detailed local-style references and Vaastu preferences or permitted exceptions",
+    "Vehicle sizes, parking allocation, covered parking and gate arrangement",
+    "Whether garden and play space are shared between households",
+    "Patnam drawing dimensions and surrounding circulation",
+    "Whether the four-person indoor pooja capacity includes the pujari",
+    "Shrine heights, materials, deity facing and whether table and platform are separate",
+    "Accessibility needs, budget and construction phasing"
+  ],
+  "adaptationPolicy": {
+    "preserveFixedRequirements": true,
+    "silentlyDropRequiredSpaces": false,
+    "silentlyReduceCapacity": false,
+    "onConflict": "Show which requirements cannot fit the plot and present options for owner review. Do not imply that every plot can accommodate the same brief.",
+    "northReference": "Reassess Vaastu placement against actual north when the plot or orientation changes.",
+    "implementationStatus": "Requirements record for planning. Current renderers do not yet load or enforce this profile automatically."
+  }
+}
