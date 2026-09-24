@@ -73,6 +73,27 @@
             </div>
         </div>
         
+        <!-- Saved Land Models -->
+        <div class="space-y-3">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">Land Models</h2>
+            <div class="flex gap-2">
+                <input id="in-model-name" type="text" placeholder="Plot name (e.g. 33x60 East)" class="flex-1 bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-colors">
+                <button id="btn-save" title="Save model" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold transition-transform active:scale-95">Save</button>
+            </div>
+            <div class="flex gap-2">
+                <select id="sel-models" class="flex-1 bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-blue-400 outline-none transition-colors">
+                    <option value="">— Load saved model —</option>
+                </select>
+                <button id="btn-delete" title="Delete selected" class="px-3 py-1.5 bg-red-600/80 hover:bg-red-500 rounded-lg text-sm font-semibold transition-transform active:scale-95">Del</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-export-json" title="Download this model as .json to commit to your repo" class="py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-transform active:scale-95">Export .json</button>
+                <button id="btn-import-json" title="Load a .json model file" class="py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-transform active:scale-95">Import .json</button>
+            </div>
+            <input id="in-import-file" type="file" accept="application/json,.json" class="hidden">
+            <p id="model-status" class="text-xs text-gray-500 h-4"></p>
+        </div>
+
         <!-- DXF Export -->
         <button id="btn-export" class="mt-2 w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-lg text-sm font-semibold shadow-lg shadow-blue-900/20 transition-transform active:scale-[0.98] flex justify-center items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -187,8 +208,179 @@
             });
 
             document.getElementById('btn-export').addEventListener('click', exportDXF);
+
+            // Land model persistence
+            document.getElementById('btn-save').addEventListener('click', saveModel);
+            document.getElementById('btn-delete').addEventListener('click', deleteModel);
+            document.getElementById('sel-models').addEventListener('change', e => loadModel(e.target.value));
+            document.getElementById('btn-export-json').addEventListener('click', exportModelJSON);
+            document.getElementById('btn-import-json').addEventListener('click', () => document.getElementById('in-import-file').click());
+            document.getElementById('in-import-file').addEventListener('change', importModelJSON);
+
+            refreshModelList();
+
             window.addEventListener('resize', onWindowResize);
         }
+
+        // ---------- Land Model Persistence (Phase 1) ----------
+        const STORAGE_KEY = 'landCad3d.models';
+        const MODEL_VERSION = 1;
+
+        function getStoredModels() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+            } catch (e) {
+                console.warn('Could not parse saved models', e);
+                return {};
+            }
+        }
+
+        function setStoredModels(models) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(models));
+        }
+
+        function setStatus(msg, isError) {
+            const el = document.getElementById('model-status');
+            el.innerText = msg;
+            el.className = `text-xs h-4 ${isError ? 'text-red-400' : 'text-emerald-400'}`;
+            clearTimeout(setStatus._t);
+            setStatus._t = setTimeout(() => { el.innerText = ''; }, 4000);
+        }
+
+        // A model captures everything needed to reproduce the design.
+        function serializeModel(name) {
+            return {
+                schema: 'land-cad-3d/model',
+                version: MODEL_VERSION,
+                name: name,
+                savedAt: new Date().toISOString(),
+                config: { ...config }
+            };
+        }
+
+        function applyModel(model) {
+            if (!model || !model.config) return false;
+            const c = model.config;
+            // Only copy known keys so an old/foreign file can't inject junk.
+            ['front', 'rear', 'left', 'right', 'greenArea'].forEach(k => {
+                if (typeof c[k] === 'number' && !isNaN(c[k])) config[k] = c[k];
+            });
+            ['showVaastu', 'showGrid', 'cutaway'].forEach(k => {
+                if (typeof c[k] === 'boolean') config[k] = c[k];
+            });
+            syncInputsFromConfig();
+            updatePlot();
+            return true;
+        }
+
+        // Push current config values back into the UI controls.
+        function syncInputsFromConfig() {
+            document.getElementById('in-front').value = config.front;
+            document.getElementById('in-rear').value = config.rear;
+            document.getElementById('in-left').value = config.left;
+            document.getElementById('in-right').value = config.right;
+            document.getElementById('in-green').value = config.greenArea;
+            document.getElementById('val-green').innerText = config.greenArea;
+            document.getElementById('toggle-vaastu').checked = config.showVaastu;
+            document.getElementById('toggle-grid').checked = config.showGrid;
+            document.getElementById('toggle-cutaway').checked = config.cutaway;
+        }
+
+        function refreshModelList(selectedName) {
+            const sel = document.getElementById('sel-models');
+            const models = getStoredModels();
+            const names = Object.keys(models).sort();
+            sel.innerHTML = '<option value="">— Load saved model —</option>';
+            names.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n;
+                const when = models[n].savedAt ? new Date(models[n].savedAt).toLocaleDateString() : '';
+                opt.innerText = when ? `${n}  (${when})` : n;
+                sel.appendChild(opt);
+            });
+            if (selectedName) sel.value = selectedName;
+        }
+
+        function saveModel() {
+            const name = document.getElementById('in-model-name').value.trim();
+            if (!name) { setStatus('Enter a plot name first.', true); return; }
+            const models = getStoredModels();
+            const existed = !!models[name];
+            models[name] = serializeModel(name);
+            setStoredModels(models);
+            refreshModelList(name);
+            setStatus(existed ? `Updated "${name}".` : `Saved "${name}".`);
+        }
+
+        function loadModel(name) {
+            if (!name) return;
+            const models = getStoredModels();
+            const model = models[name];
+            if (!model) { setStatus(`"${name}" not found.`, true); return; }
+            if (applyModel(model)) {
+                document.getElementById('in-model-name').value = name;
+                setStatus(`Loaded "${name}".`);
+            } else {
+                setStatus(`Could not load "${name}".`, true);
+            }
+        }
+
+        function deleteModel() {
+            const name = document.getElementById('sel-models').value;
+            if (!name) { setStatus('Select a saved model to delete.', true); return; }
+            const models = getStoredModels();
+            delete models[name];
+            setStoredModels(models);
+            refreshModelList();
+            setStatus(`Deleted "${name}".`);
+        }
+
+        // Export the current design as a .json file to commit into the repo (models/ folder).
+        function exportModelJSON() {
+            const name = document.getElementById('in-model-name').value.trim() || 'land-model';
+            const data = JSON.stringify(serializeModel(name), null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safe = name.replace(/[^a-z0-9\-_]+/gi, '_').toLowerCase();
+            a.href = url;
+            a.download = `${safe}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setStatus(`Exported ${safe}.json — commit it to models/ for review.`);
+        }
+
+        function importModelJSON(e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const model = JSON.parse(reader.result);
+                    if (model.schema !== 'land-cad-3d/model') {
+                        setStatus('Not a valid land model file.', true);
+                        return;
+                    }
+                    if (applyModel(model)) {
+                        const name = model.name || file.name.replace(/\.json$/i, '');
+                        document.getElementById('in-model-name').value = name;
+                        // Also stash it into localStorage so it appears in the list.
+                        const models = getStoredModels();
+                        models[name] = { ...model, name };
+                        setStoredModels(models);
+                        refreshModelList(name);
+                        setStatus(`Imported "${name}".`);
+                    }
+                } catch (err) {
+                    setStatus('Could not read that file.', true);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = ''; // allow re-importing the same file
+        }
+        // ------------------------------------------------------
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
