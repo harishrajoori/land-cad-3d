@@ -146,6 +146,32 @@
             </div>
             <button id="btn-snapshot" title="Save the current 3D view as a PNG image" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-transform active:scale-95">Save View as Image (.png)</button>
         </div>
+
+        <!-- Photoreal render (GPT Image 2.5) -->
+        <div class="space-y-3">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">Photoreal Render (AI)</h2>
+            <p class="text-[11px] text-gray-500 leading-snug">Sends the current 3D view + a prompt to OpenAI GPT Image 2.5. Uses your own API key, stored only in this browser. This is the only feature that sends your design off your machine.</p>
+            <input id="in-openai-key" type="password" placeholder="OpenAI API key (sk-...)" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-pink-400 outline-none transition-colors">
+            <select id="in-render-model" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-pink-400 outline-none transition-colors">
+                <option value="gpt-image-2.5-flare">Flare (fast)</option>
+                <option value="gpt-image-2.5-sunburst">Sunburst (precise)</option>
+            </select>
+            <textarea id="in-render-prompt" rows="2" placeholder="e.g. Photorealistic exterior, warm evening light, modern Indian villa, landscaped garden" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-pink-400 outline-none transition-colors resize-none"></textarea>
+            <button id="btn-render" class="w-full py-2 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 rounded-lg text-sm font-semibold transition-transform active:scale-95">Render Photoreal</button>
+            <p id="render-status" class="text-xs text-gray-500 h-4"></p>
+        </div>
+    </div>
+
+    <!-- Render result modal -->
+    <div id="render-modal" class="absolute inset-0 z-40 hidden items-center justify-center bg-black/80 p-6">
+        <div class="bg-gray-900 border border-gray-700 rounded-2xl p-4 max-w-3xl w-full flex flex-col gap-3">
+            <div class="flex justify-between items-center">
+                <h3 class="font-semibold">Photoreal Render</h3>
+                <button id="btn-render-close" class="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+            <img id="render-img" alt="AI render" class="w-full rounded-lg bg-gray-800 min-h-[200px] object-contain">
+            <button id="btn-render-download" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold">Download render (.png)</button>
+        </div>
     </div>
 
     <script>
@@ -327,6 +353,17 @@
             document.getElementById('btn-export-engineer').addEventListener('click', exportEngineerSheet);
             document.getElementById('btn-export-vaastu').addEventListener('click', exportVaastuReport);
             document.getElementById('btn-snapshot').addEventListener('click', saveSnapshot);
+
+            // Photoreal render (Phase 5)
+            document.getElementById('btn-render').addEventListener('click', renderPhotoreal);
+            document.getElementById('btn-render-close').addEventListener('click', () => {
+                const modal = document.getElementById('render-modal');
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            });
+            document.getElementById('btn-render-download').addEventListener('click', downloadRender);
+            const savedKey = localStorage.getItem('landCad3d.openaiKey');
+            if (savedKey) document.getElementById('in-openai-key').value = savedKey;
 
             // View mode (Phase 2)
             document.getElementById('btn-mode-dollhouse').addEventListener('click', () => setViewMode('dollhouse'));
@@ -1354,6 +1391,93 @@
                     setStatus('Could not capture the view.', true);
                 }
             }, 'image/png');
+        }
+
+        // ---------- Phase 5: GPT Image 2.5 photoreal render ----------
+        const OPENAI_KEY_STORE = 'landCad3d.openaiKey';
+        let lastRenderUrl = null;
+
+        function setRenderStatus(msg, isError) {
+            const el = document.getElementById('render-status');
+            el.innerText = msg;
+            el.className = `text-xs h-4 ${isError ? 'text-red-400' : 'text-pink-400'}`;
+        }
+
+        function captureCanvasBlob() {
+            return new Promise(resolve => {
+                renderer.render(scene, camera);
+                renderer.domElement.toBlob(b => resolve(b), 'image/png');
+            });
+        }
+
+        async function renderPhotoreal() {
+            const key = document.getElementById('in-openai-key').value.trim();
+            if (!key) { setRenderStatus('Enter your OpenAI API key first.', true); return; }
+            // Persist the key locally for convenience (never leaves this browser except to OpenAI).
+            localStorage.setItem(OPENAI_KEY_STORE, key);
+
+            const model = document.getElementById('in-render-model').value;
+            const userPrompt = document.getElementById('in-render-prompt').value.trim();
+            const prompt = (userPrompt || 'Photorealistic architectural render of this home, natural daylight, realistic materials and landscaping')
+                + '. Keep the same layout, proportions, and structure as the input image.';
+
+            setRenderStatus('Rendering… this can take 10–40s.');
+            const btn = document.getElementById('btn-render');
+            btn.disabled = true;
+
+            try {
+                const blob = await captureCanvasBlob();
+                if (!blob) { setRenderStatus('Could not capture the 3D view.', true); btn.disabled = false; return; }
+
+                const form = new FormData();
+                form.append('model', model);
+                form.append('prompt', prompt);
+                form.append('image', blob, 'view.png');
+                form.append('size', '1024x1024');
+
+                const res = await fetch('https://api.openai.com/v1/images/edits', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${key}` },
+                    body: form
+                });
+
+                if (!res.ok) {
+                    let detail = `HTTP ${res.status}`;
+                    try { const j = await res.json(); if (j.error && j.error.message) detail = j.error.message; } catch (e) {}
+                    setRenderStatus(`Render failed: ${detail}`, true);
+                    btn.disabled = false;
+                    return;
+                }
+
+                const data = await res.json();
+                const item = data.data && data.data[0];
+                let src = null;
+                if (item && item.b64_json) src = `data:image/png;base64,${item.b64_json}`;
+                else if (item && item.url) src = item.url;
+
+                if (!src) { setRenderStatus('No image returned.', true); btn.disabled = false; return; }
+
+                lastRenderUrl = src;
+                document.getElementById('render-img').src = src;
+                const modal = document.getElementById('render-modal');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                setRenderStatus('Render complete.');
+            } catch (err) {
+                setRenderStatus(`Error: ${err.message}`, true);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function downloadRender() {
+            if (!lastRenderUrl) return;
+            const a = document.createElement('a');
+            a.href = lastRenderUrl;
+            a.download = `${safeName()}_photoreal.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         }
     </script>
 </body>
