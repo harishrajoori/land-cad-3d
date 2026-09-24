@@ -765,6 +765,7 @@
     const groundTex = ownTexture(new THREE.CanvasTexture(groundCanvas));
     groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
     groundTex.repeat.set(groundSize / 4000, groundSize / 4000);
+    groundTex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
     const groundMat = new THREE.MeshStandardMaterial({
       map: groundTex,
       roughness: 0.92,
@@ -783,15 +784,33 @@
     camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 1, 20000);
     camera.position.set(800, 600, 800);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // Clamp pixel ratio: on HiDPI/Retina an unclamped ratio (2–3x) makes orbiting
+    // stutter because every frame renders 4–9x the pixels. 2x is plenty for sharpness.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.dataset.plan3dCanvas = 'true';
     container.appendChild(renderer.domElement);
+
+    // Image-based lighting: derive a PMREM environment from the sky texture so
+    // MeshStandardMaterials get soft ambient reflections instead of looking flat.
+    // This is the single biggest real-time quality improvement.
+    try {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      pmrem.compileEquirectangularShader();
+      if (skyTexture) {
+        scene.environment = pmrem.fromEquirectangular(skyTexture).texture;
+        scene.environmentIntensity = 0.6;
+      }
+      pmrem.dispose();
+    } catch (e) {
+      // IBL is a visual enhancement; if PMREM fails, fall back to the lights alone.
+    }
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -947,18 +966,20 @@
       }
     });
 
-    // Lights — improved multi-source setup
-    ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+    // Lights — multi-source setup. Ambient is lowered because the PMREM environment
+    // now supplies soft image-based fill, which keeps shadows readable and depth intact.
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.22);
     scene.add(ambientLight);
-    hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.4);
+    hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.35);
     scene.add(hemiLight);
 
     // Key light (sun)
-    sunLight = new THREE.DirectionalLight(0xfff8e7, 1.0);
+    sunLight = new THREE.DirectionalLight(0xfff8e7, 1.15);
     sunLight.position.set(500, 1200, 800);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 1024;
-    sunLight.shadow.mapSize.height = 1024;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.radius = 3;
     sunLight.shadow.camera.left = -1500;
     sunLight.shadow.camera.right = 1500;
     sunLight.shadow.camera.top = 1500;
@@ -1025,14 +1046,21 @@
       cx.fillRect(0, 0, 64, 64);
       const tex = ownTexture(new THREE.CanvasTexture(c));
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.anisotropy = maxAnisotropy();
       return tex;
     }
     const tex = ownTexture(new THREE.CanvasTexture(canvas));
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = maxAnisotropy();
     // Each texture tile covers ~200cm of real wall
     const tileSizeCm = 200;
     tex.repeat.set(wallWidth / tileSizeCm, wallHeight / tileSizeCm);
     return tex;
+  }
+
+  /** Max supported anisotropy for crisp textures at grazing angles; safe fallback. */
+  function maxAnisotropy(): number {
+    return renderer ? renderer.capabilities.getMaxAnisotropy() : 8;
   }
 
   function buildStraightStairRun(group: THREE.Group, mat: THREE.MeshStandardMaterial, sideMat: THREE.MeshStandardMaterial, width: number, depth: number, riserCount: number, riserHeight: number, offsetX: number, offsetY: number, offsetZ: number) {
@@ -1571,12 +1599,15 @@
         if (floorCanvas) {
           const tex = ownTexture(new THREE.CanvasTexture(floorCanvas));
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.anisotropy = maxAnisotropy();
           // Tile every 200cm — now UVs are 0-1, so repeat = room size / tile size
           const tileSizeCm = 200;
           tex.repeat.set(roomW / tileSizeCm, roomH / tileSizeCm);
           material = new THREE.MeshStandardMaterial({
             map: tex,
             roughness: floorMat.roughness ?? 0.8,
+            metalness: 0.05,
+            envMapIntensity: 0.5,
             transparent: false,
             opacity: 1.0
           });
@@ -1941,14 +1972,23 @@
       if (walkthroughMotion.active) requestRender();
       else walkthroughMotion.stopClock();
     } else {
-      // A change event schedules the next damping step. Once the controls settle,
-      // leave no callback queued until an interaction or scene update wakes us.
-      updateOrbitDamping(controls, lastOrbitFrame === undefined ? 1 / 60 : (timestamp - lastOrbitFrame) / 1000);
-      lastOrbitFrame = animId === undefined ? undefined : timestamp;
-      if (sceneDirty) {
+      // Step damping. `update()` returns true while the camera is still moving
+      // (including the inertial settle-out after the pointer is released).
+      const dt = lastOrbitFrame === undefined ? 1 / 60 : (timestamp - lastOrbitFrame) / 1000;
+      const moved = updateOrbitDamping(controls, dt);
+      // Render whenever the scene changed OR the camera is still settling, so the
+      // damped motion plays out smoothly instead of stalling on the last frame.
+      if (sceneDirty || moved) {
         sceneDirty = false;
         renderer.render(scene, camera);
         renderer.domElement.dataset.rendered = 'true';
+      }
+      // Keep a frame queued while the camera is still in motion; otherwise go idle.
+      if (moved) {
+        lastOrbitFrame = timestamp;
+        requestRender();
+      } else {
+        lastOrbitFrame = undefined;
       }
     }
   }

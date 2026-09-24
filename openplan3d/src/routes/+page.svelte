@@ -63,6 +63,18 @@
   onMount(() => {
     void withLibraryError(async () => {
       await refreshProjects();
+      // Seed the three Vaastu properties as ready-to-open projects on first run.
+      if (projects.length === 0 && !localStorage.getItem('seededVaastuProjects')) {
+        try {
+          for (const template of houseTemplates.filter((t) => t.tags.includes('vaastu'))) {
+            await localStore.save(template.create());
+          }
+          localStorage.setItem('seededVaastuProjects', '1');
+          await refreshProjects();
+        } catch (e) {
+          // Seeding is best-effort; ignore storage errors so the page still loads.
+        }
+      }
       const seen = localStorage.getItem('hasSeenWelcome');
       if (!seen && projects.length === 0) {
         showWelcome = true;
