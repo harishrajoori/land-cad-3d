@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
 </head>
 <body class="overflow-hidden m-0 p-0 bg-gray-900 text-white font-sans antialiased selection:bg-blue-500/30">
     <!-- Labels Overlay for 3D Text -->
@@ -15,11 +16,31 @@
     <!-- Three.js Canvas -->
     <div id="canvas-container" class="absolute inset-0 z-0"></div>
 
+    <!-- Walk-mode overlay (click to start / controls hint) -->
+    <div id="walk-overlay" class="absolute inset-0 z-30 hidden flex-col items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer select-none">
+        <div class="text-center px-6">
+            <p class="text-2xl font-bold text-white">Click to walk through</p>
+            <p class="mt-3 text-sm text-gray-300">Move: <span class="font-mono bg-gray-800 px-2 py-0.5 rounded">W A S D</span> or arrow keys &nbsp;·&nbsp; Look: move mouse &nbsp;·&nbsp; Run: <span class="font-mono bg-gray-800 px-2 py-0.5 rounded">Shift</span></p>
+            <p class="mt-1 text-sm text-gray-400">Press <span class="font-mono bg-gray-800 px-2 py-0.5 rounded">Esc</span> to release the mouse</p>
+        </div>
+    </div>
+    <!-- Crosshair shown while walking -->
+    <div id="crosshair" class="absolute left-1/2 top-1/2 z-20 hidden -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/70 pointer-events-none"></div>
+
     <!-- UI Config Panel Drawer -->
     <div id="ui-panel" class="absolute top-4 right-4 w-80 max-w-[90vw] bg-gray-900/80 backdrop-blur-md border border-gray-700 p-5 rounded-2xl shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto z-20 transition-transform">
         <div>
             <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Web3D Arch Viewer</h1>
             <p class="text-xs text-gray-400 mt-1">Parametric CAD & Vaastu Engine</p>
+        </div>
+
+        <!-- View Mode -->
+        <div class="space-y-2">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">View Mode</h2>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-mode-dollhouse" class="py-2 rounded-lg text-sm font-semibold transition-colors bg-blue-600 text-white">Dollhouse</button>
+                <button id="btn-mode-walk" class="py-2 rounded-lg text-sm font-semibold transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600">Walk Through</button>
+            </div>
         </div>
         
         <!-- Plot Dimensions -->
@@ -122,6 +143,16 @@
         let roomsData = [];
         let columnsData = [];
 
+        // ---- Walkthrough state (Phase 2) ----
+        let viewMode = 'dollhouse';          // 'dollhouse' | 'walk'
+        let pointerControls = null;          // THREE.PointerLockControls
+        let wallBoxes = [];                  // THREE.Box3[] used for collision in walk mode
+        const clock = new THREE.Clock();
+        const EYE_HEIGHT = 5.5;              // feet
+        const PLAYER_RADIUS = 1.2;           // feet, collision buffer around the camera
+        const move = { forward: false, back: false, left: false, right: false, run: false };
+        const walkVelocity = new THREE.Vector3();
+
         init();
 
         function init() {
@@ -208,6 +239,10 @@
             });
 
             document.getElementById('btn-export').addEventListener('click', exportDXF);
+
+            // View mode (Phase 2)
+            document.getElementById('btn-mode-dollhouse').addEventListener('click', () => setViewMode('dollhouse'));
+            document.getElementById('btn-mode-walk').addEventListener('click', () => setViewMode('walk'));
 
             // Land model persistence
             document.getElementById('btn-save').addEventListener('click', saveModel);
@@ -557,7 +592,8 @@
             const floorTileMat = new THREE.MeshStandardMaterial({color: 0xe2e8f0, roughness: 0.2});
             const floorCarpetMat = new THREE.MeshStandardMaterial({color: 0x4a5568, roughness: 0.9});
 
-            const wallHeight = config.cutaway ? 4.5 : 11;
+            // In walk mode we always want full-height walls (can't see over / walk through).
+            const wallHeight = (viewMode === 'walk') ? 11 : (config.cutaway ? 4.5 : 11);
             
             function buildWallSegment(x1, y1, x2, y2, type) {
                 if (type === 'none') return null;
@@ -581,6 +617,7 @@
                     mesh.position.set(px, py, pz);
                     mesh.castShadow = true;
                     mesh.receiveShadow = true;
+                    mesh.userData.collider = true; // used to build wall collision boxes in walk mode
                     group.add(mesh);
                 }
                 
@@ -824,11 +861,171 @@
                 scene.add(gridGroup);
                 sceneElements.push(gridGroup);
             }
+
+            // 6. Rebuild wall collision boxes for walk mode.
+            rebuildWallBoxes();
+        }
+
+        // Collect world-space bounding boxes of all wall blocks for collision.
+        function rebuildWallBoxes() {
+            wallBoxes = [];
+            scene.updateMatrixWorld(true);
+            sceneElements.forEach(el => {
+                if (!el.traverse) return;
+                el.traverse(child => {
+                    if (child.isMesh && child.userData && child.userData.collider) {
+                        const box = new THREE.Box3().setFromObject(child);
+                        wallBoxes.push(box);
+                    }
+                });
+            });
+        }
+
+        // Returns true if a camera at (x, z) would overlap any wall (within PLAYER_RADIUS).
+        function collidesAt(x, z) {
+            for (let i = 0; i < wallBoxes.length; i++) {
+                const b = wallBoxes[i];
+                // Only walls that exist at eye level matter; all our walls span the floor, so skip Y test.
+                if (x + PLAYER_RADIUS > b.min.x && x - PLAYER_RADIUS < b.max.x &&
+                    z + PLAYER_RADIUS > b.min.z && z - PLAYER_RADIUS < b.max.z) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Move the first-person camera with WASD, blocking movement into walls (slide along axis).
+        function updateWalk(delta) {
+            const speed = (move.run ? 26 : 13); // feet per second
+            const damping = 10;
+
+            walkVelocity.x -= walkVelocity.x * damping * delta;
+            walkVelocity.z -= walkVelocity.z * damping * delta;
+
+            const dir = new THREE.Vector3();
+            dir.z = Number(move.forward) - Number(move.back);
+            dir.x = Number(move.right) - Number(move.left);
+            dir.normalize();
+
+            if (move.forward || move.back) walkVelocity.z += dir.z * speed * delta;
+            if (move.left || move.right) walkVelocity.x += dir.x * speed * delta;
+
+            const obj = pointerControls.getObject();
+            const before = obj.position.clone();
+
+            // Apply movement in camera-local space, then test collision per-axis so we can slide.
+            pointerControls.moveRight(walkVelocity.x * delta);
+            if (collidesAt(obj.position.x, obj.position.z)) {
+                obj.position.x = before.x;
+                walkVelocity.x = 0;
+            }
+            const afterX = obj.position.clone();
+            pointerControls.moveForward(walkVelocity.z * delta);
+            if (collidesAt(obj.position.x, obj.position.z)) {
+                obj.position.z = afterX.z;
+                walkVelocity.z = 0;
+            }
+
+            obj.position.y = EYE_HEIGHT; // stay at eye height (single-storey walk)
+        }
+
+        // ---- View mode switching ----
+        function setViewMode(mode) {
+            if (mode === viewMode) return;
+            viewMode = mode;
+
+            const dollBtn = document.getElementById('btn-mode-dollhouse');
+            const walkBtn = document.getElementById('btn-mode-walk');
+            const overlay = document.getElementById('walk-overlay');
+            const crosshair = document.getElementById('crosshair');
+
+            if (mode === 'walk') {
+                dollBtn.className = 'py-2 rounded-lg text-sm font-semibold transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600';
+                walkBtn.className = 'py-2 rounded-lg text-sm font-semibold transition-colors bg-emerald-600 text-white';
+
+                controls.enabled = false;
+                if (!pointerControls) initPointerControls();
+
+                // Rebuild with full-height walls + fresh collision boxes.
+                updatePlot();
+                placeWalker();
+
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+                crosshair.classList.remove('hidden');
+            } else {
+                dollBtn.className = 'py-2 rounded-lg text-sm font-semibold transition-colors bg-blue-600 text-white';
+                walkBtn.className = 'py-2 rounded-lg text-sm font-semibold transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600';
+
+                if (pointerControls && pointerControls.isLocked) pointerControls.unlock();
+                controls.enabled = true;
+                camera.position.set(40, 150, 80);
+                controls.target.set(40, 0, -40);
+
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+                crosshair.classList.add('hidden');
+
+                updatePlot(); // restore cutaway/normal walls
+            }
+        }
+
+        function initPointerControls() {
+            pointerControls = new THREE.PointerLockControls(camera, renderer.domElement);
+            scene.add(pointerControls.getObject());
+
+            const overlay = document.getElementById('walk-overlay');
+            overlay.addEventListener('click', () => {
+                if (viewMode === 'walk') pointerControls.lock();
+            });
+            pointerControls.addEventListener('lock', () => {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            });
+            pointerControls.addEventListener('unlock', () => {
+                if (viewMode === 'walk') {
+                    overlay.classList.remove('hidden');
+                    overlay.classList.add('flex');
+                }
+            });
+
+            document.addEventListener('keydown', onWalkKey(true));
+            document.addEventListener('keyup', onWalkKey(false));
+        }
+
+        // Place the walker just outside the front entrance, looking into the plot.
+        // Plot front edge is at y=0 (world z=0); the house extends into +y (world -z).
+        // Standing at world z = +8 (south of the front) and looking toward -z faces the house.
+        function placeWalker() {
+            const obj = pointerControls.getObject();
+            obj.position.set(centroid.x, EYE_HEIGHT, 8);
+            walkVelocity.set(0, 0, 0);
+            // Face north, into the plot.
+            camera.rotation.set(0, Math.PI, 0);
+        }
+
+        function onWalkKey(isDown) {
+            return function (e) {
+                switch (e.code) {
+                    case 'ArrowUp': case 'KeyW': move.forward = isDown; break;
+                    case 'ArrowDown': case 'KeyS': move.back = isDown; break;
+                    case 'ArrowLeft': case 'KeyA': move.left = isDown; break;
+                    case 'ArrowRight': case 'KeyD': move.right = isDown; break;
+                    case 'ShiftLeft': case 'ShiftRight': move.run = isDown; break;
+                }
+            };
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            if (viewMode === 'walk' && pointerControls) {
+                updateWalk(delta);
+            } else if (controls) {
+                controls.update();
+            }
+
             renderer.render(scene, camera);
             
             // Sync HTML Labels with 3D space
