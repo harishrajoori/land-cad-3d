@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Web3D Architectural & CAD Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body class="overflow-hidden m-0 p-0 bg-gray-900 text-white font-sans antialiased selection:bg-blue-500/30">
+    <!-- Labels Overlay for 3D Text -->
+    <div id="labels-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
+    
+    <!-- Three.js Canvas -->
+    <div id="canvas-container" class="absolute inset-0 z-0"></div>
+
+    <!-- UI Config Panel Drawer -->
+    <div id="ui-panel" class="absolute top-4 right-4 w-80 max-w-[90vw] bg-gray-900/80 backdrop-blur-md border border-gray-700 p-5 rounded-2xl shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto z-20 transition-transform">
+        <div>
+            <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Web3D Arch Viewer</h1>
+            <p class="text-xs text-gray-400 mt-1">Parametric CAD & Vaastu Engine</p>
+        </div>
+        
+        <!-- Plot Dimensions -->
+        <div class="space-y-3">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">Plot Dimensions (ft)</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Front (South)</label>
+                    <input id="in-front" type="number" step="0.1" value="81.0" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Rear (North)</label>
+                    <input id="in-rear" type="number" step="0.1" value="78.25" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Left (West)</label>
+                    <input id="in-left" type="number" step="0.1" value="52.0" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Right (East)</label>
+                    <input id="in-right" type="number" step="0.1" value="48.0" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none transition-colors">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Green Zone Area -->
+        <div class="space-y-3">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1 flex justify-between">
+                <span>Green Zone</span>
+                <span class="text-emerald-400 normal-case"><span id="val-green">1080</span> sq.ft</span>
+            </h2>
+            <input id="in-green" type="range" min="0" max="3000" step="10" value="1080" class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+        </div>
+        
+        <!-- Vaastu & Inspection Layers -->
+        <div class="space-y-3">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">Layers & Views</h2>
+            <div class="flex flex-col gap-2.5">
+                <label class="flex items-center space-x-3 cursor-pointer group">
+                    <input id="toggle-vaastu" type="checkbox" class="form-checkbox h-4 w-4 text-purple-500 rounded border-gray-600 bg-gray-800 focus:ring-purple-500 focus:ring-offset-gray-900 transition-colors">
+                    <span class="text-sm text-gray-300 group-hover:text-white transition-colors">16-Zone Vaastu Chakra</span>
+                </label>
+                <label class="flex items-center space-x-3 cursor-pointer group">
+                    <input id="toggle-grid" type="checkbox" class="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-600 bg-gray-800 focus:ring-blue-500 focus:ring-offset-gray-900 transition-colors">
+                    <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Structural Column Grid</span>
+                </label>
+                <label class="flex items-center space-x-3 cursor-pointer group">
+                    <input id="toggle-cutaway" type="checkbox" checked class="form-checkbox h-4 w-4 text-orange-500 rounded border-gray-600 bg-gray-800 focus:ring-orange-500 focus:ring-offset-gray-900 transition-colors">
+                    <span class="text-sm text-gray-300 group-hover:text-white transition-colors">3D Dollhouse Cutaway</span>
+                </label>
+            </div>
+        </div>
+        
+        <!-- DXF Export -->
+        <button id="btn-export" class="mt-2 w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-lg text-sm font-semibold shadow-lg shadow-blue-900/20 transition-transform active:scale-[0.98] flex justify-center items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Export .DXF
+        </button>
+    </div>
+
+    <script>
+        // State
+        const config = {
+            front: 81.0,
+            rear: 78.25,
+            left: 52.0,
+            right: 48.0,
+            greenArea: 1080,
+            showVaastu: false,
+            showGrid: false,
+            cutaway: true
+        };
+
+        let scene, camera, renderer, controls;
+        let sceneElements = [];
+        let htmlLabels = [];
+        let plotPoints = [];
+        let centroid = {x: 0, y: 0};
+        let roomsData = [];
+        let columnsData = [];
+
+        init();
+
+        function init() {
+            // Setup Three.js
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x111827, 0.002);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.set(40, 150, 80);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.target.set(40, 0, -40);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(100, 200, 50);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.left = -100;
+            dirLight.shadow.camera.right = 100;
+            dirLight.shadow.camera.top = 100;
+            dirLight.shadow.camera.bottom = -100;
+            scene.add(dirLight);
+
+            // Ground Plane (Infinite)
+            const groundGeom = new THREE.PlaneGeometry(2000, 2000);
+            groundGeom.rotateX(-Math.PI / 2);
+            const groundMat = new THREE.MeshStandardMaterial({color: 0x1f2937, roughness: 1.0});
+            const ground = new THREE.Mesh(groundGeom, groundMat);
+            ground.position.y = -0.5;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            attachEvents();
+            updatePlot();
+            animate();
+        }
+
+        function attachEvents() {
+            const inputs = ['front', 'rear', 'left', 'right'];
+            inputs.forEach(id => {
+                document.getElementById(`in-${id}`).addEventListener('change', e => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val) && val > 0) {
+                        config[id] = val;
+                        updatePlot();
+                    }
+                });
+            });
+
+            document.getElementById('in-green').addEventListener('input', e => {
+                config.greenArea = parseFloat(e.target.value);
+                document.getElementById('val-green').innerText = config.greenArea;
+                updatePlot();
+            });
+
+            document.getElementById('toggle-vaastu').addEventListener('change', e => {
+                config.showVaastu = e.target.checked;
+                updatePlot();
+            });
+
+            document.getElementById('toggle-grid').addEventListener('change', e => {
+                config.showGrid = e.target.checked;
+                updatePlot();
+            });
+
+            document.getElementById('toggle-cutaway').addEventListener('change', e => {
+                config.cutaway = e.target.checked;
+                updatePlot();
+            });
+
+            document.getElementById('btn-export').addEventListener('click', exportDXF);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function clearScene() {
+            sceneElements.forEach(el => {
+                scene.remove(el);
+                if (el.geometry) el.geometry.dispose();
+                if (el.material) {
+                    if (Array.isArray(el.material)) el.material.forEach(m => m.dispose());
+                    else el.material.dispose();
+                }
+                if (el.isGroup) {
+                    el.traverse(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                            else child.material.dispose();
+                        }
+                    });
+                }
+            });
+            sceneElements = [];
+
+            const container = document.getElementById('labels-container');
+            if (container) container.innerHTML = '';
+            htmlLabels = [];
+        }
+
+        function addHtmlLabel(text, pos, className) {
+            const el = document.createElement('div');
+            el.className = `absolute text-center whitespace-nowrap px-2 py-1 rounded-md text-xs font-semibold backdrop-blur-md shadow-lg border transform -translate-x-1/2 -translate-y-1/2 transition-opacity ${className}`;
+            el.innerText = text;
+            document.getElementById('labels-container').appendChild(el);
+            htmlLabels.push({ el, pos });
+        }
+
+        function calculatePlot(f, r, l, ri) {
+            const d_sq = f*f + l*l;
+            const d = Math.sqrt(d_sq);
+            
+            if (r + ri < d || r + d < ri || ri + d < r) {
+                alert("Invalid plot dimensions: cannot form a closed polygon with these sides.");
+                return null;
+            }
+            
+            const a = r;
+            const b = ri;
+            const c = d;
+            
+            const angle_C4_C2 = Math.atan2( -l, f ); 
+            const cos_theta = (a*a + c*c - b*b) / (2 * a * c);
+            const theta = Math.acos(cos_theta);
+            
+            // C3 is CCW from C4->C2
+            const angle_C4_C3 = angle_C4_C2 + theta;
+            const x3 = 0 + a * Math.cos(angle_C4_C3);
+            const y3 = l + a * Math.sin(angle_C4_C3);
+            
+            return [
+                {x: 0, y: 0},     // C1: Front-Left (South-West)
+                {x: f, y: 0},     // C2: Front-Right (South-East)
+                {x: x3, y: y3},   // C3: Rear-Right (North-East)
+                {x: 0, y: l}      // C4: Rear-Left (North-West)
+            ];
+        }
+
+        function calculateCentroid(pts) {
+            let cx = 0, cy = 0, a = 0;
+            for (let i = 0; i < pts.length; i++) {
+                const p1 = pts[i];
+                const p2 = pts[(i + 1) % pts.length];
+                const cross = p1.x * p2.y - p2.x * p1.y;
+                a += cross;
+                cx += (p1.x + p2.x) * cross;
+                cy += (p1.y + p2.y) * cross;
+            }
+            a *= 0.5;
+            if (a === 0) return {x: 0, y: 0};
+            return {x: cx / (6 * a), y: cy / (6 * a)};
+        }
+
+        function pointInPoly(pt, poly) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                let xi = poly[i].x, yi = poly[i].y;
+                let xj = poly[j].x, yj = poly[j].y;
+                let intersect = ((yi > pt.y) != (yj > pt.y))
+                    && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        function updatePlot() {
+            clearScene();
+            
+            plotPoints = calculatePlot(config.front, config.rear, config.left, config.right);
+            if (!plotPoints) return;
+            centroid = calculateCentroid(plotPoints);
+            
+            buildMeshes();
+        }
+
+        function buildMeshes() {
+            // 1. Plot Base
+            const shape = new THREE.Shape();
+            shape.moveTo(plotPoints[0].x, plotPoints[0].y);
+            for(let i=1; i<plotPoints.length; i++){
+                shape.lineTo(plotPoints[i].x, plotPoints[i].y);
+            }
+            const geom = new THREE.ShapeGeometry(shape);
+            geom.rotateX(-Math.PI / 2);
+            const mat = new THREE.MeshStandardMaterial({color: 0x374151, side: THREE.DoubleSide, roughness: 0.9}); 
+            const plotMesh = new THREE.Mesh(geom, mat);
+            plotMesh.receiveShadow = true;
+            scene.add(plotMesh);
+            sceneElements.push(plotMesh);
+
+            // 2. Green Zone
+            const C1 = plotPoints[0], C2 = plotPoints[1], C3 = plotPoints[2], C4 = plotPoints[3];
+            const l_len = Math.hypot(C1.x - C4.x, C1.y - C4.y);
+            const ri_len = Math.hypot(C2.x - C3.x, C2.y - C3.y);
+            const r_len = Math.hypot(C3.x - C4.x, C3.y - C4.y);
+            
+            const d = config.greenArea / r_len;
+            const safe_d = Math.min(d, Math.min(l_len, ri_len) * 0.9);
+            
+            const C4p = { x: C4.x + (C1.x - C4.x) * (safe_d/l_len), y: C4.y + (C1.y - C4.y) * (safe_d/l_len) };
+            const C3p = { x: C3.x + (C2.x - C3.x) * (safe_d/ri_len), y: C3.y + (C2.y - C3.y) * (safe_d/ri_len) };
+            
+            if (config.greenArea > 0 && safe_d > 0) {
+                const greenShape = new THREE.Shape();
+                greenShape.moveTo(C4p.x, C4p.y);
+                greenShape.lineTo(C3p.x, C3p.y);
+                greenShape.lineTo(C3.x, C3.y);
+                greenShape.lineTo(C4.x, C4.y);
+                const greenGeom = new THREE.ShapeGeometry(greenShape);
+                greenGeom.rotateX(-Math.PI / 2);
+                
+                const greenMat = new THREE.MeshStandardMaterial({color: 0x2f855a, roughness: 1.0, side: THREE.DoubleSide}); 
+                const greenMesh = new THREE.Mesh(greenGeom, greenMat);
+                greenMesh.position.y = 0.05; 
+                greenMesh.receiveShadow = true;
+                scene.add(greenMesh);
+                sceneElements.push(greenMesh);
+            }
+
+            // 3. Real Home Generation Engine (Walls, Floors, Furniture)
+            const pad = 4;
+            const bMinX = Math.min(C1.x, C4p.x) + pad;
+            const bMaxX = Math.max(C2.x, C3p.x) - pad;
+            const bMinY = Math.min(C1.y, C2.y) + pad;
+            const bMaxY = Math.min(C4p.y, C3p.y) - pad;
+            
+            const W = Math.max(0.1, bMaxX - bMinX);
+            const H = Math.max(0.1, bMaxY - bMinY);
+            
+            const houseGroup = new THREE.Group();
+            houseGroup.position.set(bMinX, 0, -bMinY);
+            scene.add(houseGroup);
+            sceneElements.push(houseGroup);
+            
+            const extWallMat = new THREE.MeshStandardMaterial({color: 0xefedea, roughness: 0.9});
+            const intWallMat = new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 1.0});
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0x88ccff, transmission: 0.9, opacity: 1, transparent: true,
+                roughness: 0.1, ior: 1.5, thickness: 0.1
+            });
+            const floorWoodMat = new THREE.MeshStandardMaterial({color: 0x8b5a2b, roughness: 0.6});
+            const floorTileMat = new THREE.MeshStandardMaterial({color: 0xe2e8f0, roughness: 0.2});
+            const floorCarpetMat = new THREE.MeshStandardMaterial({color: 0x4a5568, roughness: 0.9});
+
+            const wallHeight = config.cutaway ? 4.5 : 11;
+            
+            function buildWallSegment(x1, y1, x2, y2, type) {
+                if (type === 'none') return null;
+                let length = Math.hypot(x2 - x1, y2 - y1);
+                let cx = (x1 + x2) / 2;
+                let cy = (y1 + y2) / 2;
+                let angle = Math.atan2(y2 - y1, x2 - x1);
+                
+                let hasDoor = type === 'interior' && length >= 4.5;
+                let hasWindow = type === 'exterior' && length >= 5;
+                
+                let group = new THREE.Group();
+                group.position.set(cx, 0, -cy);
+                group.rotation.y = angle;
+                
+                let thickness = type === 'exterior' ? 0.8 : 0.5;
+                let mat = type === 'exterior' ? extWallMat : intWallMat;
+                
+                function addBlock(w, h, d, px, py, pz, m) {
+                    let mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+                    mesh.position.set(px, py, pz);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    group.add(mesh);
+                }
+                
+                if (type === 'glass') {
+                    addBlock(length, wallHeight, thickness, 0, wallHeight/2, 0, glassMat);
+                } else if (hasDoor) {
+                    let doorW = 3;
+                    let doorH = 7;
+                    let w1 = (length - doorW) / 2;
+                    addBlock(w1, wallHeight, thickness, -length/2 + w1/2, wallHeight/2, 0, mat);
+                    addBlock(w1, wallHeight, thickness, length/2 - w1/2, wallHeight/2, 0, mat);
+                    if (wallHeight > doorH) {
+                        addBlock(doorW, wallHeight - doorH, thickness, 0, doorH + (wallHeight - doorH)/2, 0, mat);
+                    }
+                } else if (hasWindow) {
+                    let winW = 4;
+                    let winH = 4;
+                    let winY = 3;
+                    let w1 = (length - winW) / 2;
+                    addBlock(w1, wallHeight, thickness, -length/2 + w1/2, wallHeight/2, 0, mat);
+                    addBlock(w1, wallHeight, thickness, length/2 - w1/2, wallHeight/2, 0, mat);
+                    addBlock(winW, winY, thickness, 0, winY/2, 0, mat);
+                    if (wallHeight > winY + winH) {
+                        let topH = wallHeight - (winY + winH);
+                        addBlock(winW, topH, thickness, 0, winY + winH + topH/2, 0, mat);
+                    }
+                    addBlock(winW, winH, 0.1, 0, winY + winH/2, 0, glassMat);
+                } else {
+                    addBlock(length, wallHeight, thickness, 0, wallHeight/2, 0, mat);
+                }
+                return group;
+            }
+
+            const xs = [0, W/3, 2*W/3, W];
+            const ys = [0, H/3, 2*H/3, H];
+            
+            // Horizontal walls
+            for(let i=0; i<=3; i++) {
+                for(let j=0; j<3; j++) {
+                    let type = (i === 0 || i === 3) ? 'exterior' : 'interior';
+                    if (i === 3 && j === 0) type = 'glass'; // North face of office
+                    if (i === 1 && j === 2) type = 'none'; // Open plan Kitchen to Family Hall
+                    let wall = buildWallSegment(xs[j], ys[i], xs[j+1], ys[i], type);
+                    if (wall) houseGroup.add(wall);
+                }
+            }
+            
+            // Vertical walls
+            for(let j=0; j<=3; j++) {
+                for(let i=0; i<3; i++) {
+                    let type = (j === 0 || j === 3) ? 'exterior' : 'interior';
+                    if (j === 2 && i === 1) type = 'none'; // Family Hall spans center and east
+                    let wall = buildWallSegment(xs[j], ys[i], xs[j], ys[i+1], type);
+                    if (wall) houseGroup.add(wall);
+                }
+            }
+
+            // Floors
+            for(let i=0; i<3; i++) {
+                for(let j=0; j<3; j++) {
+                    let mat = floorWoodMat;
+                    if (i === 0 && j === 2) mat = floorTileMat; // Kitchen
+                    if (i === 2 && j === 2) mat = floorTileMat; // Pooja
+                    if (i === 1 && (j === 1 || j === 2)) mat = floorTileMat; // Family Hall
+                    if ((i === 0 || i === 2) && j === 0) mat = floorCarpetMat; // Master & Office
+                    if (i === 0 && j === 1) mat = floorTileMat; // Bed 3 Bath
+                    if (i === 1 && j === 0) mat = floorCarpetMat; // Bed 2
+                    
+                    let fw = xs[j+1] - xs[j];
+                    let fh = ys[i+1] - ys[i];
+                    let cx = xs[j] + fw/2;
+                    let cy = ys[i] + fh/2;
+                    
+                    const floorGeom = new THREE.PlaneGeometry(fw, fh);
+                    floorGeom.rotateX(-Math.PI/2);
+                    const floor = new THREE.Mesh(floorGeom, mat);
+                    floor.position.set(cx, 0.05, -cy);
+                    floor.receiveShadow = true;
+                    houseGroup.add(floor);
+                }
+            }
+
+            // Furniture Helpers
+            function addBed(x, y, angle) {
+                const g = new THREE.Group();
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1, 6.5), new THREE.MeshStandardMaterial({color: 0x4a3b2c}));
+                frame.position.y = 0.5;
+                g.add(frame);
+                const matt = new THREE.Mesh(new THREE.BoxGeometry(4, 1, 6), new THREE.MeshStandardMaterial({color: 0xffffff}));
+                matt.position.y = 1.2;
+                g.add(matt);
+                const pillow = new THREE.Mesh(new THREE.BoxGeometry(3, 0.3, 1.5), new THREE.MeshStandardMaterial({color: 0xefedea}));
+                pillow.position.set(0, 1.8, -2);
+                g.add(pillow);
+                g.position.set(x, 0, -y);
+                g.rotation.y = angle;
+                houseGroup.add(g);
+            }
+
+            function addSofa(x, y) {
+                const g = new THREE.Group();
+                const m = new THREE.MeshStandardMaterial({color: 0x2b6cb0});
+                const base = new THREE.Mesh(new THREE.BoxGeometry(6, 1.5, 3), m);
+                base.position.y = 0.75;
+                g.add(base);
+                const back = new THREE.Mesh(new THREE.BoxGeometry(6, 2, 0.8), m);
+                back.position.set(0, 2, -1.1);
+                g.add(back);
+                const ext = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 4), m);
+                ext.position.set(-2, 0.75, 1.5);
+                g.add(ext);
+                g.position.set(x, 0, -y);
+                houseGroup.add(g);
+            }
+
+            function addKitchenIsland(x, y) {
+                const g = new THREE.Group();
+                const base = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 3), new THREE.MeshStandardMaterial({color: 0x2d3748}));
+                base.position.y = 1.5;
+                g.add(base);
+                const top = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.2, 3.5), new THREE.MeshStandardMaterial({color: 0xf7fafc, roughness: 0.1}));
+                top.position.y = 3.1;
+                g.add(top);
+                g.position.set(x, 0, -y);
+                houseGroup.add(g);
+            }
+
+            function addPoojaMandir(x, y) {
+                const m = new THREE.Mesh(new THREE.BoxGeometry(3, 5, 2), new THREE.MeshStandardMaterial({color: 0xedf2f7, roughness:0.1, metalness:0.2}));
+                m.position.set(x, 2.5, -y);
+                houseGroup.add(m);
+            }
+
+            addBed((xs[0]+xs[1])/2, (ys[0]+ys[1])/2, 0); // Master
+            addBed((xs[0]+xs[1])/2, (ys[1]+ys[2])/2, Math.PI/2); // Bed 2
+            addBed((xs[1]+xs[2])/2, (ys[0]+ys[1])/2, 0); // Bed 3
+            addKitchenIsland((xs[2]+xs[3])/2, (ys[0]+ys[1])/2);
+            addSofa((xs[1]+xs[3])/2, (ys[1]+ys[2])/2);
+            addPoojaMandir((xs[2]+xs[3])/2, (ys[2]+ys[3])/2);
+
+            // Roof
+            if (!config.cutaway) {
+                const roofGeom = new THREE.BoxGeometry(W + 4, 1, H + 4);
+                const roofMat = new THREE.MeshStandardMaterial({color: 0x4a5568, roughness: 0.9});
+                const roof = new THREE.Mesh(roofGeom, roofMat);
+                roof.position.set(W/2, wallHeight + 0.5, -H/2);
+                roof.castShadow = true;
+                houseGroup.add(roof);
+            }
+
+            // Populate roomsData for labels and DXF
+            roomsData = [
+                {name: 'Office / Study', x: W/6, y: H - H/6, w: W/3, h: H/3},
+                {name: 'Lounge / Hall', x: W/2, y: H - H/6, w: W/3, h: H/3},
+                {name: 'Pooja (Marble)', x: W - W/6, y: H - H/6, w: W/3, h: H/3},
+                {name: 'Bed 2', x: W/6, y: H/2, w: W/3, h: H/3},
+                {name: 'Family Hall', x: W/2 + W/6, y: H/2, w: W*2/3, h: H/3},
+                {name: 'Master Suite', x: W/6, y: H/6, w: W/3, h: H/3},
+                {name: 'Bed 3 + Bath', x: W/2, y: H/6, w: W/3, h: H/3},
+                {name: 'Kitchen + Dining', x: W - W/6, y: H/6, w: W/3, h: H/3}
+            ];
+            
+            roomsData.forEach(r => {
+                r.absX = bMinX + r.x;
+                r.absY = bMinY + r.y;
+                addHtmlLabel(r.name, new THREE.Vector3(r.absX, wallHeight + 1.5, -r.absY), 'bg-gray-900/80 text-gray-100 border-gray-600');
+            });
+
+            // 4. Vaastu Chakra Layers
+            if (config.showVaastu) {
+                const cx = centroid.x;
+                const cy = centroid.y;
+                const R = Math.max(config.front, config.left, config.right, config.rear) * 0.75; 
+                
+                const vaastuGroup = new THREE.Group();
+                const lineMat = new THREE.LineDashedMaterial({
+                    color: 0xb794f4, linewidth: 2, dashSize: 2, gapSize: 1, transparent: true, opacity: 0.8
+                });
+                
+                const angles = [
+                    {a: 0, n: 'East'}, {a: 22.5, n: 'ENE'}, {a: 45, n: 'NE (Ishanya)'}, 
+                    {a: 67.5, n: 'NNE'}, {a: 90, n: 'North'}, {a: 112.5, n: 'NNW'}, 
+                    {a: 135, n: 'NW (Vayavya)'}, {a: 157.5, n: 'WNW'}, {a: 180, n: 'West'},
+                    {a: 202.5, n: 'WSW'}, {a: 225, n: 'SW (Nairuthi)'}, {a: 247.5, n: 'SSW'},
+                    {a: 270, n: 'South'}, {a: 292.5, n: 'SSE'}, {a: 315, n: 'SE (Agneya)'},
+                    {a: 337.5, n: 'ESE'}
+                ];
+                
+                // Draw Brahmasthan center point
+                const centerGeom = new THREE.CircleGeometry(2, 32);
+                centerGeom.rotateX(-Math.PI/2);
+                const centerMat = new THREE.MeshBasicMaterial({color: 0xd6bcfa, transparent: true, opacity: 0.5});
+                const centerMesh = new THREE.Mesh(centerGeom, centerMat);
+                centerMesh.position.set(cx, 0.2, -cy);
+                vaastuGroup.add(centerMesh);
+                
+                angles.forEach(ang => {
+                    const rad = ang.a * Math.PI / 180;
+                    const px = cx + R * Math.cos(rad);
+                    const pz = -cy - R * Math.sin(rad);
+                    
+                    const geom = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(cx, 0.2, -cy),
+                        new THREE.Vector3(px, 0.2, pz)
+                    ]);
+                    const line = new THREE.Line(geom, lineMat);
+                    line.computeLineDistances(); // required for dashed lines
+                    vaastuGroup.add(line);
+                    
+                    addHtmlLabel(ang.n, new THREE.Vector3(px, 0.5, pz), 'text-purple-100 bg-purple-900/80 border-purple-500');
+                });
+                
+                scene.add(vaastuGroup);
+                sceneElements.push(vaastuGroup);
+            }
+
+            // 5. Structural Grid
+            columnsData = [];
+            if (config.showGrid) {
+                const gridGroup = new THREE.Group();
+                const colGeom = new THREE.CylinderGeometry(0.6, 0.6, 12, 16);
+                const colMat = new THREE.MeshStandardMaterial({color: 0x718096, roughness: 0.7});
+                
+                const span = 15; // 15' span
+                let minX = Math.min(...plotPoints.map(p=>p.x));
+                let maxX = Math.max(...plotPoints.map(p=>p.x));
+                let minY = Math.min(...plotPoints.map(p=>p.y));
+                let maxY = Math.max(...plotPoints.map(p=>p.y));
+                
+                for(let x = minX; x <= maxX; x += span) {
+                    for(let y = minY; y <= maxY; y += span) {
+                        if (pointInPoly({x, y}, plotPoints)) {
+                            const mesh = new THREE.Mesh(colGeom, colMat);
+                            mesh.position.set(x, 6, -y);
+                            mesh.castShadow = true;
+                            gridGroup.add(mesh);
+                            columnsData.push({x, y});
+                        }
+                    }
+                }
+                scene.add(gridGroup);
+                sceneElements.push(gridGroup);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            
+            // Sync HTML Labels with 3D space
+            const tempV = new THREE.Vector3();
+            htmlLabels.forEach(label => {
+                tempV.copy(label.pos);
+                tempV.project(camera);
+                
+                // Hide if behind camera
+                if (tempV.z > 1) {
+                    label.el.style.opacity = '0';
+                    label.el.style.pointerEvents = 'none';
+                    return;
+                }
+                
+                const x = (tempV.x *  0.5 + 0.5) * window.innerWidth;
+                const y = (tempV.y * -0.5 + 0.5) * window.innerHeight;
+                
+                label.el.style.opacity = '1';
+                label.el.style.left = `${x}px`;
+                label.el.style.top = `${y}px`;
+            });
+        }
+
+        // CAD Exporter Logic
+        function exportDXF() {
+            let dxf = `0\nSECTION\n2\nENTITIES\n`;
+            
+            function addLine(x1, y1, x2, y2, layer) {
+                dxf += `0\nLINE\n8\n${layer}\n10\n${x1.toFixed(4)}\n20\n${y1.toFixed(4)}\n30\n0.0\n11\n${x2.toFixed(4)}\n21\n${y2.toFixed(4)}\n31\n0.0\n`;
+            }
+            
+            // Plot Boundaries
+            for(let i=0; i<plotPoints.length; i++){
+                let p1 = plotPoints[i];
+                let p2 = plotPoints[(i+1)%plotPoints.length];
+                addLine(p1.x, p1.y, p2.x, p2.y, 'BOUNDARY');
+            }
+            
+            // Room Boundaries
+            roomsData.forEach(r => {
+                let x1 = r.absX - r.w/2;
+                let x2 = r.absX + r.w/2;
+                let y1 = r.absY - r.h/2;
+                let y2 = r.absY + r.h/2;
+                
+                addLine(x1, y1, x2, y1, 'ROOMS');
+                addLine(x2, y1, x2, y2, 'ROOMS');
+                addLine(x2, y2, x1, y2, 'ROOMS');
+                addLine(x1, y2, x1, y1, 'ROOMS');
+            });
+
+            // Grid Columns
+            if (config.showGrid) {
+                columnsData.forEach(c => {
+                    let s = 1.0; // small cross
+                    addLine(c.x - s, c.y, c.x + s, c.y, 'COLUMNS');
+                    addLine(c.x, c.y - s, c.x, c.y + s, 'COLUMNS');
+                });
+            }
+
+            dxf += `0\nENDSEC\n0\nEOF\n`;
+
+            const blob = new Blob([dxf], { type: 'application/dxf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'architectural_layout.dxf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
