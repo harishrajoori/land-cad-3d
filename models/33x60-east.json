@@ -1,0 +1,18 @@
+{
+  "schema": "land-cad-3d/model",
+  "version": 1,
+  "name": "33x60 East",
+  "savedAt": "2026-09-24T18:00:00.000Z",
+  "config": {
+    "front": 33,
+    "rear": 33,
+    "left": 60,
+    "right": 60,
+    "greenArea": 300,
+    "facing": "E",
+    "vaastuStrict": true,
+    "showVaastu": true,
+    "showGrid": false,
+    "cutaway": true
+  }
+}

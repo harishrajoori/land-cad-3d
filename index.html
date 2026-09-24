@@ -66,6 +66,24 @@
             </div>
         </div>
         
+        <!-- Facing & Vaastu Layout -->
+        <div class="space-y-3">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">Facing & Vaastu</h2>
+            <div>
+                <label class="text-xs text-gray-400 block mb-1">Front of plot faces</label>
+                <select id="in-facing" class="w-full bg-gray-800 rounded-lg px-3 py-1.5 text-sm border border-gray-600 focus:border-purple-400 outline-none transition-colors">
+                    <option value="N">North</option>
+                    <option value="E">East</option>
+                    <option value="S" selected>South</option>
+                    <option value="W">West</option>
+                </select>
+            </div>
+            <label class="flex items-center space-x-3 cursor-pointer group">
+                <input id="toggle-vaastu-layout" type="checkbox" checked class="form-checkbox h-4 w-4 text-purple-500 rounded border-gray-600 bg-gray-800 focus:ring-purple-500 focus:ring-offset-gray-900 transition-colors">
+                <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Auto-place rooms per Vaastu</span>
+            </label>
+        </div>
+
         <!-- Green Zone Area -->
         <div class="space-y-3">
             <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1 flex justify-between">
@@ -132,7 +150,9 @@
             greenArea: 1080,
             showVaastu: false,
             showGrid: false,
-            cutaway: true
+            cutaway: true,
+            facing: 'S',        // direction the FRONT of the plot faces: 'N' | 'E' | 'S' | 'W'
+            vaastuStrict: true  // true = place rooms by Vaastu; drives the auto-layout
         };
 
         let scene, camera, renderer, controls;
@@ -142,6 +162,53 @@
         let centroid = {x: 0, y: 0};
         let roomsData = [];
         let columnsData = [];
+
+        // ---- Vaastu layout engine (Phase 3) ----
+        // Each room targets an absolute compass zone on a 3x3 grid.
+        // grid zone codes: NW N NE / W C E / SW S SE
+        // Sources (traditional Vastu Purush Mandala): pooja=NE, kitchen=SE,
+        // master=SW, entrance/living=N or E, toilets=NW/W, center kept light.
+        const VAASTU_ROOMS = [
+            { key: 'pooja',   name: 'Pooja',        zone: 'NE', floor: 'tile',   furniture: 'mandir' },
+            { key: 'kitchen', name: 'Kitchen',      zone: 'SE', floor: 'tile',   furniture: 'kitchen' },
+            { key: 'master',  name: 'Master Bed',   zone: 'SW', floor: 'carpet', furniture: 'bed' },
+            { key: 'living',  name: 'Living / Hall',zone: 'N',  floor: 'tile',   furniture: 'sofa' },
+            { key: 'bed2',    name: 'Bedroom 2',    zone: 'W',  floor: 'carpet', furniture: 'bed' },
+            { key: 'bed3',    name: 'Bedroom 3',    zone: 'E',  floor: 'carpet', furniture: 'bed' },
+            { key: 'dining',  name: 'Dining',       zone: 'S',  floor: 'wood',   furniture: null },
+            { key: 'bath',    name: 'Bath / Utility',zone: 'NW', floor: 'tile',  furniture: null },
+            { key: 'foyer',   name: 'Foyer (open)', zone: 'C',  floor: 'wood',   furniture: null }
+        ];
+
+        // Compass zone -> (row i, col j) on the local grid, given which way the front faces.
+        // Local grid (before facing rotation): i=0 is FRONT row, i=2 is REAR row,
+        // j=0 is LEFT col, j=2 is RIGHT col.
+        // We define the absolute layout for a SOUTH-facing plot (front = south), then
+        // rotate the zone by the facing so the same room lands in the right absolute corner.
+        const ZONE_TO_CELL_SOUTH = {
+            // for south-facing: front(i=0)=South, rear(i=2)=North, left(j=0)=West, right(j=2)=East
+            'SW': [0, 0], 'S': [0, 1], 'SE': [0, 2],
+            'W':  [1, 0], 'C': [1, 1], 'E':  [1, 2],
+            'NW': [2, 0], 'N': [2, 1], 'NE': [2, 2]
+        };
+
+        // Rotate a compass zone by the facing direction relative to south.
+        // Turning the facing rotates every zone the same way so the grid stays consistent.
+        const COMPASS_ORDER = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        function rotateZone(zone, facing) {
+            if (zone === 'C') return 'C';
+            // Steps to rotate: south is our reference. Each 90° change of facing rotates zones by 2 steps.
+            const facingSteps = { 'S': 0, 'E': 2, 'N': 4, 'W': 6 }; // verified against cell->absolute test
+            const shift = facingSteps[facing] || 0;
+            const idx = COMPASS_ORDER.indexOf(zone);
+            if (idx < 0) return zone;
+            return COMPASS_ORDER[(idx + shift) % 8];
+        }
+
+        function zoneToCell(zone, facing) {
+            const rotated = rotateZone(zone, facing);
+            return ZONE_TO_CELL_SOUTH[rotated];
+        }
 
         // ---- Walkthrough state (Phase 2) ----
         let viewMode = 'dollhouse';          // 'dollhouse' | 'walk'
@@ -233,6 +300,16 @@
                 updatePlot();
             });
 
+            document.getElementById('in-facing').addEventListener('change', e => {
+                config.facing = e.target.value;
+                updatePlot();
+            });
+
+            document.getElementById('toggle-vaastu-layout').addEventListener('change', e => {
+                config.vaastuStrict = e.target.checked;
+                updatePlot();
+            });
+
             document.getElementById('toggle-cutaway').addEventListener('change', e => {
                 config.cutaway = e.target.checked;
                 updatePlot();
@@ -300,9 +377,10 @@
             ['front', 'rear', 'left', 'right', 'greenArea'].forEach(k => {
                 if (typeof c[k] === 'number' && !isNaN(c[k])) config[k] = c[k];
             });
-            ['showVaastu', 'showGrid', 'cutaway'].forEach(k => {
+            ['showVaastu', 'showGrid', 'cutaway', 'vaastuStrict'].forEach(k => {
                 if (typeof c[k] === 'boolean') config[k] = c[k];
             });
+            if (['N', 'E', 'S', 'W'].includes(c.facing)) config.facing = c.facing;
             syncInputsFromConfig();
             updatePlot();
             return true;
@@ -319,6 +397,8 @@
             document.getElementById('toggle-vaastu').checked = config.showVaastu;
             document.getElementById('toggle-grid').checked = config.showGrid;
             document.getElementById('toggle-cutaway').checked = config.cutaway;
+            document.getElementById('in-facing').value = config.facing;
+            document.getElementById('toggle-vaastu-layout').checked = config.vaastuStrict;
         }
 
         function refreshModelList(selectedName) {
@@ -653,39 +733,52 @@
 
             const xs = [0, W/3, 2*W/3, W];
             const ys = [0, H/3, 2*H/3, H];
-            
-            // Horizontal walls
+
+            // ---- Vaastu-driven cell assignment ----
+            // Build a 3x3 grid of room definitions from VAASTU_ROOMS + facing.
+            // If Vaastu auto-layout is off, fall back to the legacy fixed labels.
+            const cellRoom = [[null,null,null],[null,null,null],[null,null,null]];
+            if (config.vaastuStrict) {
+                VAASTU_ROOMS.forEach(r => {
+                    const cell = zoneToCell(r.zone, config.facing);
+                    if (cell) cellRoom[cell[0]][cell[1]] = r;
+                });
+            } else {
+                // Legacy fallback grid (indices [i][j], i=front..rear)
+                const legacy = [
+                    [{name:'Master Bed',floor:'carpet',furniture:'bed'},{name:'Bedroom 3',floor:'tile',furniture:'bed'},{name:'Kitchen',floor:'tile',furniture:'kitchen'}],
+                    [{name:'Bedroom 2',floor:'carpet',furniture:'bed'},{name:'Family Hall',floor:'tile',furniture:'sofa'},{name:'Family Hall',floor:'tile',furniture:null}],
+                    [{name:'Office',floor:'carpet',furniture:null},{name:'Lounge',floor:'wood',furniture:null},{name:'Pooja',floor:'tile',furniture:'mandir'}]
+                ];
+                for(let i=0;i<3;i++) for(let j=0;j<3;j++) cellRoom[i][j]=legacy[i][j];
+            }
+
+            // The front row's outward wall gets the main entrance (door).
+            // Horizontal walls (run along x, separate rows i)
             for(let i=0; i<=3; i++) {
                 for(let j=0; j<3; j++) {
                     let type = (i === 0 || i === 3) ? 'exterior' : 'interior';
-                    if (i === 3 && j === 0) type = 'glass'; // North face of office
-                    if (i === 1 && j === 2) type = 'none'; // Open plan Kitchen to Family Hall
                     let wall = buildWallSegment(xs[j], ys[i], xs[j+1], ys[i], type);
                     if (wall) houseGroup.add(wall);
                 }
             }
-            
-            // Vertical walls
+            // Vertical walls (run along y, separate cols j)
             for(let j=0; j<=3; j++) {
                 for(let i=0; i<3; i++) {
                     let type = (j === 0 || j === 3) ? 'exterior' : 'interior';
-                    if (j === 2 && i === 1) type = 'none'; // Family Hall spans center and east
                     let wall = buildWallSegment(xs[j], ys[i], xs[j], ys[i+1], type);
                     if (wall) houseGroup.add(wall);
                 }
             }
 
-            // Floors
+            const floorMatFor = { wood: floorWoodMat, tile: floorTileMat, carpet: floorCarpetMat };
+
+            // Floors — material chosen per assigned room.
             for(let i=0; i<3; i++) {
                 for(let j=0; j<3; j++) {
-                    let mat = floorWoodMat;
-                    if (i === 0 && j === 2) mat = floorTileMat; // Kitchen
-                    if (i === 2 && j === 2) mat = floorTileMat; // Pooja
-                    if (i === 1 && (j === 1 || j === 2)) mat = floorTileMat; // Family Hall
-                    if ((i === 0 || i === 2) && j === 0) mat = floorCarpetMat; // Master & Office
-                    if (i === 0 && j === 1) mat = floorTileMat; // Bed 3 Bath
-                    if (i === 1 && j === 0) mat = floorCarpetMat; // Bed 2
-                    
+                    const room = cellRoom[i][j];
+                    let mat = (room && floorMatFor[room.floor]) ? floorMatFor[room.floor] : floorWoodMat;
+
                     let fw = xs[j+1] - xs[j];
                     let fh = ys[i+1] - ys[i];
                     let cx = xs[j] + fw/2;
@@ -751,12 +844,32 @@
                 houseGroup.add(m);
             }
 
-            addBed((xs[0]+xs[1])/2, (ys[0]+ys[1])/2, 0); // Master
-            addBed((xs[0]+xs[1])/2, (ys[1]+ys[2])/2, Math.PI/2); // Bed 2
-            addBed((xs[1]+xs[2])/2, (ys[0]+ys[1])/2, 0); // Bed 3
-            addKitchenIsland((xs[2]+xs[3])/2, (ys[0]+ys[1])/2);
-            addSofa((xs[1]+xs[3])/2, (ys[1]+ys[2])/2);
-            addPoojaMandir((xs[2]+xs[3])/2, (ys[2]+ys[3])/2);
+            // ---- Data-driven furniture + room labels from the Vaastu assignment ----
+            const furnitureFns = {
+                bed: (cx, cy) => addBed(cx, cy, 0),
+                sofa: (cx, cy) => addSofa(cx, cy),
+                kitchen: (cx, cy) => addKitchenIsland(cx, cy),
+                mandir: (cx, cy) => addPoojaMandir(cx, cy)
+            };
+            roomsData = [];
+            for(let i=0; i<3; i++) {
+                for(let j=0; j<3; j++) {
+                    const room = cellRoom[i][j];
+                    if (!room) continue;
+                    const cx = (xs[j] + xs[j+1]) / 2;
+                    const cy = (ys[i] + ys[i+1]) / 2;
+                    if (room.furniture && furnitureFns[room.furniture]) {
+                        furnitureFns[room.furniture](cx, cy);
+                    }
+                    roomsData.push({
+                        name: room.name,
+                        zone: room.zone || '',
+                        x: cx, y: cy,
+                        w: xs[j+1] - xs[j],
+                        h: ys[i+1] - ys[i]
+                    });
+                }
+            }
 
             // Roof
             if (!config.cutaway) {
@@ -768,22 +881,12 @@
                 houseGroup.add(roof);
             }
 
-            // Populate roomsData for labels and DXF
-            roomsData = [
-                {name: 'Office / Study', x: W/6, y: H - H/6, w: W/3, h: H/3},
-                {name: 'Lounge / Hall', x: W/2, y: H - H/6, w: W/3, h: H/3},
-                {name: 'Pooja (Marble)', x: W - W/6, y: H - H/6, w: W/3, h: H/3},
-                {name: 'Bed 2', x: W/6, y: H/2, w: W/3, h: H/3},
-                {name: 'Family Hall', x: W/2 + W/6, y: H/2, w: W*2/3, h: H/3},
-                {name: 'Master Suite', x: W/6, y: H/6, w: W/3, h: H/3},
-                {name: 'Bed 3 + Bath', x: W/2, y: H/6, w: W/3, h: H/3},
-                {name: 'Kitchen + Dining', x: W - W/6, y: H/6, w: W/3, h: H/3}
-            ];
-            
+            // Room labels (show name + Vaastu zone) — driven by roomsData built above.
             roomsData.forEach(r => {
                 r.absX = bMinX + r.x;
                 r.absY = bMinY + r.y;
-                addHtmlLabel(r.name, new THREE.Vector3(r.absX, wallHeight + 1.5, -r.absY), 'bg-gray-900/80 text-gray-100 border-gray-600');
+                const label = r.zone ? `${r.name} · ${r.zone}` : r.name;
+                addHtmlLabel(label, new THREE.Vector3(r.absX, wallHeight + 1.5, -r.absY), 'bg-gray-900/80 text-gray-100 border-gray-600');
             });
 
             // 4. Vaastu Chakra Layers
@@ -1065,7 +1168,11 @@
                 addLine(p1.x, p1.y, p2.x, p2.y, 'BOUNDARY');
             }
             
-            // Room Boundaries
+            function addText(x, y, height, str, layer) {
+                dxf += `0\nTEXT\n8\n${layer}\n10\n${x.toFixed(4)}\n20\n${y.toFixed(4)}\n30\n0.0\n40\n${height.toFixed(2)}\n1\n${str}\n`;
+            }
+
+            // Room Boundaries + labels (name and Vaastu zone) for the engineer.
             roomsData.forEach(r => {
                 let x1 = r.absX - r.w/2;
                 let x2 = r.absX + r.w/2;
@@ -1076,6 +1183,9 @@
                 addLine(x2, y1, x2, y2, 'ROOMS');
                 addLine(x2, y2, x1, y2, 'ROOMS');
                 addLine(x1, y2, x1, y1, 'ROOMS');
+
+                const label = r.zone ? `${r.name} (${r.zone})` : r.name;
+                addText(x1 + 1, r.absY, 1.5, label, 'ROOM_LABELS');
             });
 
             // Grid Columns

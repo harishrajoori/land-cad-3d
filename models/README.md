@@ -19,10 +19,18 @@ Each `.json` file here is one saved land/plot design you can review later.
   "config": {
     "front": 33, "rear": 33, "left": 60, "right": 60,
     "greenArea": 300,
+    "facing": "E",
+    "vaastuStrict": true,
     "showVaastu": true, "showGrid": false, "cutaway": true
   }
 }
 ```
 
-`config` holds the plot dimensions (feet), green-zone area (sq.ft), and view toggles.
-Future phases will add room requirements and facing direction to this same file.
+`config` fields:
+- `front`, `rear`, `left`, `right` — plot side lengths in feet.
+- `greenArea` — green-zone area in sq.ft.
+- `facing` — direction the front of the plot faces: `"N"`, `"E"`, `"S"`, or `"W"`. Drives Vaastu room placement.
+- `vaastuStrict` — when `true`, rooms are auto-placed per Vaastu (pooja NE, kitchen SE, master SW, etc.).
+- `showVaastu`, `showGrid`, `cutaway` — view toggles.
+
+Older model files without `facing`/`vaastuStrict` still load (defaults are used).
