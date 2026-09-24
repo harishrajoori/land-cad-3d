@@ -1,60 +1,65 @@
 # Land CAD 3D — Vaastu Home Design & Walkthrough
 
-A single-file, local, browser-based tool to explore a plot, auto-lay-out a
-Vaastu-compliant home, walk through it in 3D, and export plans for discussion
-with your engineer and Vaastu consultant.
+Tools to explore plots, auto-lay-out a Vaastu-compliant home (G+1), walk through
+it in 3D, and export plans for your engineer and Vaastu consultant.
 
-No server, no build step, no subscription. Open `index.html` in a browser.
+This repo now has **two parts**:
 
-## Features
+## 1. `openplan3d/` — the main app (recommended)
 
-- **Plot input** — front / rear / left / right dimensions (feet), supports
-  irregular 4-corner plots, plus a green/setback zone.
-- **Facing direction** (N/E/S/W) — drives Vaastu placement; rotating the facing
-  rotates the whole layout so rooms stay in the correct absolute compass corner.
-- **Vaastu-driven auto-layout** — rooms placed per the Vastu Purush Mandala:
-  Pooja NE, Kitchen SE, Master SW, Living N, Dining S, Bath/Utility NW,
-  Brahmasthan (center) kept open.
-- **Two view modes:**
-  - **Dollhouse** — orbit + cutaway, 16-zone Vaastu Chakra overlay, structural
-    column grid.
-  - **Walk Through** — first-person (WASD + mouse look, Shift to run), full-height
-    walls, wall collision. Walk from outside into the home.
-- **Save / load land models** — name and store designs in the browser, plus
-  export/import as `.json` files committed under `models/` for review later.
-- **Exports for discussion:**
-  - Engineer CAD `.DXF` (boundaries, rooms, labels, columns)
-  - Engineer summary sheet (dimensions + room areas, print to PDF)
-  - Vaastu placement/compliance report (print to PDF)
-  - Save the current 3D view as `.png`
-- **Photoreal render (optional)** — send the current view + a prompt to OpenAI
-  GPT Image 2.5 using your own API key (stored only in your browser).
+A full 2D/3D floor-plan editor (SvelteKit + Three.js), adopted from the MIT-licensed
+[openPlan3D](https://github.com/laanlabs/openPlan3D) and **extended with a Vaastu layer**.
 
-## Run it
+What it gives us out of the box: a real 2D editor, instant 3D view, **first-person
+walkthrough**, **multiple floors (G+1)**, doors/windows/stairs/furniture, materials
+and lighting, and exports to **DXF, PDF, SVG, PNG, JSON** — plus an optional
+**AI photoreal render** (OpenAI Responses / Gemini, browser-only keys).
 
-Open `index.html` directly, or serve the folder:
+Our additions:
+- `src/lib/utils/vaastuTemplates.ts` — generates **G+1 Vaastu house plans** with
+  rooms auto-placed by the Vastu Purush Mandala (kitchen SE, master SW, pooja NE,
+  living N, toilets NW, staircase S). Registered in the template picker.
+- Three ready templates for the real Karimnagar properties:
+  - **Property 1** — West-facing 80×50 ft
+  - **Property 2** — Corner (W+S roads) 50×39 ft
+  - **Property 3** — North-facing 51×47 ft
+- Each generates a two-floor plan: ground = 3 BHK + daily pooja (NE) + large
+  occasional pooja + common bath; first floor = brother's unit.
+
+### Run it
 
 ```
-python3 -m http.server 8000
-# then visit http://localhost:8000
+cd openplan3d
+npm install
+npm run dev        # http://localhost:5173
 ```
 
-## Saved models
+Open the app, click **New Project → Templates**, and pick one of the 🕉️ Vaastu
+templates. Toggle 3D and walkthrough, add a second floor, and export for your
+engineer. For photoreal renders, add an OpenAI key in Settings → AI (use a
+Responses model such as gpt-4.1, or GPT Image 2.5 where supported).
 
-See `models/README.md` for the file format. Export a design as `.json`, drop it
-in `models/`, and commit it to keep a reviewable history of every plot.
+### Vaastu logic
+
+Vaastu zones are **absolute** compass directions (North is up in the plan), so a
+kitchen always lands in the real South-East corner regardless of facing. The plot's
+`facing` decides which road-side wall carries the main entrance. Zone→cell mapping
+and the G+1 generator are covered by `tests/vaastu-templates.test.ts`.
+
+## 2. `index.html` — the original single-file prototype
+
+The earlier zero-dependency Three.js prototype (parametric plot + Vaastu overlay +
+walkthrough + DXF + reports + GPT Image hook). Kept as reference. See `models/` for
+the property spec files.
 
 ## Honest scope
 
-This is a **decision-and-exploration** tool. The layout is Vaastu-correct in
-placement and scale-accurate, but it is a schematic — not a structurally
-engineered plan, and not photorealistic on its own. Use the exports to have
-sharp conversations with your architect/engineer and Vaastu consultant, and
-validate structure, plumbing, and local building codes with a professional
-before building.
+Both are **decision/exploration** tools. Layouts are Vaastu-correct in placement and
+scale-accurate, but schematic — not structurally engineered, and not photorealistic
+on their own. Validate structure, plumbing, and local codes with a professional, and
+confirm Vaastu specifics with a local Karimnagar consultant, before building.
 
-## Privacy
+## Licenses & attribution
 
-Everything runs locally. The only feature that sends data off your machine is
-the optional photoreal render, which calls OpenAI directly with your own key.
-API keys and secrets are gitignored.
+`openplan3d/` retains its MIT `LICENSE` (© the openPlan3D authors). Our additions are
+under the same terms.
