@@ -18,6 +18,7 @@
   import type { FurnitureDef } from '$lib/utils/furnitureCatalog';
   import FurnitureThumbnail from './FurnitureThumbnail.svelte';
   import CustomModelPanel from './CustomModelPanel.svelte';
+  import AITexturePanel from './AITexturePanel.svelte';
   import { createProjectFromRoomPlan, extractRoomJsonFromZip, roomPlanImportOptions, validateRoomPlan, ORTHO_VERSION } from '$lib/utils/roomplanImport';
   import { currentProject } from '$lib/stores/project';
 
@@ -596,6 +597,7 @@
     {:else if activeTab === 'objects'}
       <div class="space-y-2">
         <CustomModelPanel />
+        <AITexturePanel />
         <!-- Search with clear button and result count -->
         <div class="relative">
           <input

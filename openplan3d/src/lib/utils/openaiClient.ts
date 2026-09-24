@@ -130,6 +130,25 @@ export async function fetchOpenAIModels(config: OpenAIConfig, customFetch: typeo
   return parseModelsResponse(await request({ ...config, model: DEFAULT_OPENAI_MODEL }, 'models', undefined, customFetch, signal));
 }
 
+/** Generate a standalone image (no input photo) — used for seamless PBR textures. */
+export async function generateOpenAITexture(
+  config: OpenAIConfig, prompt: string,
+  customFetch: typeof fetch = fetch, signal?: AbortSignal
+): Promise<string> {
+  const data = await request(config, 'responses', {
+    model: getEffectiveModel(config), store: false,
+    input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+    tools: [{ type: 'image_generation', quality: 'high', size: '1024x1024', output_format: 'png' }],
+    tool_choice: { type: 'image_generation' },
+  }, customFetch, signal);
+  const output = isRecord(data) && Array.isArray(data.output) ? data.output : [];
+  const image = output.find(item => isRecord(item) && item.type === 'image_generation_call' && typeof item.result === 'string' && item.result);
+  if (image && typeof image.result === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(image.result)) {
+    return `data:image/png;base64,${image.result}`;
+  }
+  throw new Error('No image returned. This provider and model must support POST /responses with the image_generation tool. Try another model.');
+}
+
 export async function generateOpenAIRenderImage(
   config: OpenAIConfig, base64Image: string, prompt: string,
   customFetch: typeof fetch = fetch, signal?: AbortSignal

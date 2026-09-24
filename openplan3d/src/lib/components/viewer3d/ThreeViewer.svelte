@@ -38,6 +38,7 @@
   import { detectRooms, resolveRoomGeometry, getRoomPolygon, roomCentroid, roomLabelPosition } from '$lib/utils/roomDetection';
   import { getMaterial } from '$lib/utils/materials';
   import { getWallTextureCanvas, getFloorTextureCanvas, setTextureLoadCallback } from '$lib/utils/textureGenerator';
+  import { restoreAllAITextures } from '$lib/utils/aiTextures';
 
   let container: HTMLDivElement;
   let renderer: THREE.WebGLRenderer;
@@ -166,13 +167,14 @@
   }
 
   function buildAIPrompt(): string {
-    let prompt = `Transform this interior 3D floor plan render into a ${aiRenderStyle} image. `;
+    let prompt = `You are an architectural visualization artist. Convert this 3D floor-plan render into a ${aiRenderStyle}, photorealistic image with the fidelity of a professional CGI archviz render. `;
     prompt += `Lighting: ${aiRenderLighting}. Mood: ${aiRenderMood}. `;
-    prompt += `Keep the exact same room geometry, furniture placement, and camera angle. `;
-    prompt += `Add realistic materials, textures, shadows, and reflections. `;
-    prompt += `Make walls, floors, and furniture look like real materials (wood, fabric, metal, etc). `;
+    // Faithfulness is critical for a decision-making tool: the AI must not redesign.
+    prompt += `CRITICAL: Preserve the EXACT room layout, wall positions, window and door locations, furniture placement, proportions, and camera angle from the input. Do not add, remove, move, or resize any room, wall, or furniture. `;
+    prompt += `Only upgrade surface realism: apply believable PBR materials (wood grain, marble/tile veining with grout, plaster, fabric weave, brushed metal, clear glass), physically plausible global illumination, soft contact shadows, subtle ambient occlusion in corners, and gentle reflections. `;
+    prompt += `Realistic scale and human proportions. Clean, high-resolution, no text or watermarks. `;
     if (aiRenderExtra.trim()) prompt += aiRenderExtra.trim() + ' ';
-    prompt += `Do NOT change the room layout, furniture positions, or camera perspective.`;
+    prompt += `Again: keep the geometry and composition identical to the input — this is a faithful re-render, not a redesign.`;
     return prompt;
   }
 
@@ -259,7 +261,9 @@
   async function runOpenAIRender(signal: AbortSignal): Promise<string> {
     const config = { ...get(openAISettings), model: openaiModel };
     validateOpenAIConfig(config);
-    const imageDataUrl = captureSceneBase64(1024, 576);
+    // Capture at the render tool's 3:2 aspect (1536x1024) so the AI gets a sharp,
+    // correctly-proportioned input and returns a faithful, higher-detail result.
+    const imageDataUrl = captureSceneBase64(1536, 1024);
     return generateOpenAIRenderImage(config, imageDataUrl.split(',')[1], buildAIPrompt(), fetch, signal);
   }
 
@@ -2087,6 +2091,9 @@
     init();
     viewerMounted = true;
     markSceneDirty();
+
+    // Re-apply any previously generated AI textures (cached in localStorage).
+    void restoreAllAITextures();
 
     // Rebuild 3D scene when photo textures finish loading
     const stopTextures = setTextureLoadCallback(() => {

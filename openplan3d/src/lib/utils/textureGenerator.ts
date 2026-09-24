@@ -9,6 +9,26 @@ import { base } from '$app/paths';
 const cache = new Map<string, HTMLCanvasElement>();
 const imageCache = new Map<string, HTMLImageElement>();
 const loadingSet = new Set<string>();
+
+// AI/custom texture overrides. If a canvas is registered for a texture id, the
+// getters return it instead of the bundled photo/procedural texture. Used by the
+// AI-texture feature (aiTextures.ts) to bake generated PBR maps into materials.
+const overrides = new Map<string, HTMLCanvasElement>();
+export function registerTextureOverride(id: string, canvas: HTMLCanvasElement) {
+  overrides.set(id, canvas);
+  overrides.set(`floor-${id}`, canvas);
+  overrides.set(`wall-${id}`, canvas);
+  notifyTextureLoad();
+}
+export function clearTextureOverride(id: string) {
+  overrides.delete(id);
+  overrides.delete(`floor-${id}`);
+  overrides.delete(`wall-${id}`);
+  notifyTextureLoad();
+}
+export function hasTextureOverride(id: string): boolean {
+  return overrides.has(id) || overrides.has(`floor-${id}`) || overrides.has(`wall-${id}`);
+}
 // Failed requests can retry on a later draw without producing a request per frame.
 const retryAfter = new Map<string, number>();
 const TEXTURE_RETRY_DELAY_MS = 30_000;
@@ -506,6 +526,9 @@ const LEGACY_FLOOR_MAP: Record<string, string> = {
 export function getFloorTextureCanvas(materialId: string): HTMLCanvasElement | null {
   // Resolve legacy IDs to actual texture keys
   const resolvedId = LEGACY_FLOOR_MAP[materialId] || materialId;
+  // AI/custom override takes precedence over bundled textures.
+  const override = overrides.get(`floor-${resolvedId}`) || overrides.get(resolvedId);
+  if (override) return override;
   const cacheKey = `photo-floor-${resolvedId}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey)!;
 
@@ -552,6 +575,9 @@ export function setTextureLoadCallback(cb: () => void): () => void {
 }
 
 export function getWallTextureCanvas(textureId: string, color: string): HTMLCanvasElement | null {
+  // AI/custom override takes precedence.
+  const override = overrides.get(`wall-${textureId}`) || overrides.get(textureId);
+  if (override) return override;
   // Try photo texture first
   const photo = loadPhotoTexture(textureId, notifyTextureLoad);
   if (photo) return photo;
