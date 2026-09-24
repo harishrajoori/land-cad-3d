@@ -34,3 +34,40 @@ Each `.json` file here is one saved land/plot design you can review later.
 - `showVaastu`, `showGrid`, `cutaway` — view toggles.
 
 Older model files without `facing`/`vaastuStrict` still load (defaults are used).
+
+## Version 2 schema (rich requirements)
+
+Model files can also carry `site`, `program`, `notes`, and `location` blocks that
+capture real requirements (roads, corner status, G+1 structure, per-floor room
+program, family split). The 3D engine currently renders only the single-floor
+Vaastu layout from `config`, but these extra blocks are **preserved on save** and
+serve as the documented spec to share with your engineer and Vaastu consultant.
+
+```json
+{
+  "schema": "land-cad-3d/model",
+  "version": 2,
+  "name": "Property 1 — West 80x50",
+  "location": "Karimnagar, Telangana",
+  "config": { "front": 80, "rear": 80, "left": 50, "right": 50, "facing": "W", ... },
+  "site": {
+    "roads": [{ "side": "W", "widthFt": 20 }],
+    "corner": false
+  },
+  "program": {
+    "structure": "G+1",
+    "familySplit": { "ground": "Self + family", "first": "Brother + family" },
+    "shared": ["Garden", "Children play space"],
+    "groundFloor": { "type": "3 BHK", "rooms": [ { "name": "Master Bedroom", "zone": "SW" }, ... ] },
+    "firstFloor":  { "rooms": [ ... ] }
+  }
+}
+```
+
+Vaastu zones use: NE, E, SE, S, SW, W, NW, N, C (center/Brahmasthan).
+
+### Included property files
+- `property-1-west-80x50.json` — West-facing, 80 ft front × 50 ft depth, 20 ft road.
+- `property-2-corner-wsw.json` — Corner plot, West side 39 ft (20 ft road) + South side 50 ft (30 ft road).
+- `property-3-north-51x47.json` — North-facing, 51 ft front × 47 ft depth, 20 ft road.
+- `33x60-east.json` — earlier example.

@@ -1,0 +1,63 @@
+{
+  "schema": "land-cad-3d/model",
+  "version": 2,
+  "name": "Property 1 — West 80x50",
+  "savedAt": "2026-09-24T18:30:00.000Z",
+  "location": "Karimnagar, Telangana",
+  "config": {
+    "front": 80,
+    "rear": 80,
+    "left": 50,
+    "right": 50,
+    "greenArea": 800,
+    "facing": "W",
+    "vaastuStrict": true,
+    "showVaastu": true,
+    "showGrid": false,
+    "cutaway": true
+  },
+  "site": {
+    "facingLabel": "West facing",
+    "frontWidthFt": 80,
+    "depthFt": 50,
+    "roads": [
+      { "side": "W", "widthFt": 20 }
+    ],
+    "corner": false
+  },
+  "program": {
+    "structure": "G+1",
+    "familySplit": {
+      "ground": "Self + family",
+      "first": "Brother + family"
+    },
+    "shared": ["Garden", "Children play space"],
+    "vaastuStandard": "South-Indian Vaastu (Telangana). Confirm with a local Karimnagar consultant.",
+    "groundFloor": {
+      "type": "3 BHK",
+      "rooms": [
+        { "name": "Master Bedroom", "zone": "SW" },
+        { "name": "Bedroom 2", "zone": "W" },
+        { "name": "Bedroom 3", "zone": "S" },
+        { "name": "Living / Hall", "zone": "N" },
+        { "name": "Kitchen", "zone": "SE" },
+        { "name": "Dining", "zone": "W" },
+        { "name": "Daily Pooja", "zone": "NE" },
+        { "name": "Special Pooja (occasional, large)", "zone": "NE", "notes": "Big room, special-day usage" },
+        { "name": "Common Bathroom", "zone": "NW" },
+        { "name": "Staircase to 1st floor", "zone": "S" }
+      ]
+    },
+    "firstFloor": {
+      "type": "Brother's unit (mirror of ground where possible)",
+      "rooms": [
+        { "name": "Master Bedroom", "zone": "SW" },
+        { "name": "Bedroom 2", "zone": "W" },
+        { "name": "Living / Hall", "zone": "N" },
+        { "name": "Kitchen", "zone": "SE" },
+        { "name": "Bathroom", "zone": "NW" }
+      ]
+    }
+  },
+  "notes": "West-facing: entrance on west road toward NW/W of the front; keep NE light for pooja; master heavy in SW; staircase in S/W ascending clockwise."
+}

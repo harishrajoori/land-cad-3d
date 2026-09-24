@@ -384,7 +384,7 @@
 
         // ---------- Land Model Persistence (Phase 1) ----------
         const STORAGE_KEY = 'landCad3d.models';
-        const MODEL_VERSION = 1;
+        const MODEL_VERSION = 2;
 
         function getStoredModels() {
             try {
@@ -408,19 +408,29 @@
         }
 
         // A model captures everything needed to reproduce the design.
+        // Extra metadata (site/program/notes) that the 3D engine doesn't render yet
+        // but we round-trip so rich requirement files aren't lost on re-save.
+        let loadedExtras = {};
+
         function serializeModel(name) {
             return {
                 schema: 'land-cad-3d/model',
                 version: MODEL_VERSION,
                 name: name,
                 savedAt: new Date().toISOString(),
-                config: { ...config }
+                config: { ...config },
+                ...loadedExtras
             };
         }
 
         function applyModel(model) {
             if (!model || !model.config) return false;
             const c = model.config;
+            // Preserve non-config sections (site, program, notes, location) for round-trip.
+            loadedExtras = {};
+            ['site', 'program', 'notes', 'location'].forEach(k => {
+                if (model[k] !== undefined) loadedExtras[k] = model[k];
+            });
             // Only copy known keys so an old/foreign file can't inject junk.
             ['front', 'rear', 'left', 'right', 'greenArea'].forEach(k => {
                 if (typeof c[k] === 'number' && !isNaN(c[k])) config[k] = c[k];

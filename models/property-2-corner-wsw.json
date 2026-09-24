@@ -1,0 +1,65 @@
+{
+  "schema": "land-cad-3d/model",
+  "version": 2,
+  "name": "Property 2 — Corner W+S (39x50)",
+  "savedAt": "2026-09-24T18:30:00.000Z",
+  "location": "Karimnagar, Telangana",
+  "config": {
+    "front": 39,
+    "rear": 39,
+    "left": 50,
+    "right": 50,
+    "greenArea": 500,
+    "facing": "W",
+    "vaastuStrict": true,
+    "showVaastu": true,
+    "showGrid": false,
+    "cutaway": true
+  },
+  "site": {
+    "facingLabel": "Corner bit (West + South roads)",
+    "westSideFt": 39,
+    "southSideFt": 50,
+    "roads": [
+      { "side": "W", "widthFt": 20 },
+      { "side": "S", "widthFt": 30 }
+    ],
+    "corner": true,
+    "dimensionNote": "West edge (front) = 39 ft; South edge = 50 ft. So the plot is ~50 ft (E-W) x 39 ft (N-S). 'front'/'rear' here = the 39 ft west edge; 'left'/'right' = the 50 ft depth."
+  },
+  "program": {
+    "structure": "G+1",
+    "familySplit": {
+      "ground": "Self + family",
+      "first": "Brother + family"
+    },
+    "shared": ["Garden", "Children play space"],
+    "vaastuStandard": "South-Indian Vaastu (Telangana). Confirm with a local Karimnagar consultant.",
+    "groundFloor": {
+      "type": "3 BHK",
+      "rooms": [
+        { "name": "Master Bedroom", "zone": "SW" },
+        { "name": "Bedroom 2", "zone": "W" },
+        { "name": "Bedroom 3", "zone": "S" },
+        { "name": "Living / Hall", "zone": "N" },
+        { "name": "Kitchen", "zone": "SE" },
+        { "name": "Dining", "zone": "W" },
+        { "name": "Daily Pooja", "zone": "NE" },
+        { "name": "Special Pooja (occasional, large)", "zone": "NE", "notes": "Big room, special-day usage" },
+        { "name": "Common Bathroom", "zone": "NW" },
+        { "name": "Staircase to 1st floor", "zone": "S" }
+      ]
+    },
+    "firstFloor": {
+      "type": "Brother's unit",
+      "rooms": [
+        { "name": "Master Bedroom", "zone": "SW" },
+        { "name": "Bedroom 2", "zone": "W" },
+        { "name": "Living / Hall", "zone": "N" },
+        { "name": "Kitchen", "zone": "SE" },
+        { "name": "Bathroom", "zone": "NW" }
+      ]
+    }
+  },
+  "notes": "Corner plot with two roads (W 20ft, S 30ft). Vaastu: keep the SW corner built-up and heavy (no entrance there); prefer the main entrance on the west road toward the NW/W, or on the south road toward the SE of the south wall. Keep the NE corner open/light for pooja and garden. Water/borewell toward NE, overhead tank/heavy mass toward SW."
+}
