@@ -133,11 +133,19 @@
             <p id="model-status" class="text-xs text-gray-500 h-4"></p>
         </div>
 
-        <!-- DXF Export -->
-        <button id="btn-export" class="mt-2 w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-lg text-sm font-semibold shadow-lg shadow-blue-900/20 transition-transform active:scale-[0.98] flex justify-center items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            Export .DXF
-        </button>
+        <!-- Exports for discussion -->
+        <div class="space-y-2">
+            <h2 class="text-xs uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-700 pb-1">Exports</h2>
+            <button id="btn-export" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-lg text-sm font-semibold shadow-lg shadow-blue-900/20 transition-transform active:scale-[0.98] flex justify-center items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Engineer CAD (.DXF)
+            </button>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-export-engineer" title="Dimensioned summary sheet for your engineer" class="py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-transform active:scale-95">Engineer Sheet</button>
+                <button id="btn-export-vaastu" title="Vaastu placement & compliance report" class="py-2 bg-purple-700 hover:bg-purple-600 rounded-lg text-xs font-semibold transition-transform active:scale-95">Vaastu Report</button>
+            </div>
+            <button id="btn-snapshot" title="Save the current 3D view as a PNG image" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-transform active:scale-95">Save View as Image (.png)</button>
+        </div>
     </div>
 
     <script>
@@ -230,7 +238,7 @@
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
             camera.position.set(40, 150, 80);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -316,6 +324,9 @@
             });
 
             document.getElementById('btn-export').addEventListener('click', exportDXF);
+            document.getElementById('btn-export-engineer').addEventListener('click', exportEngineerSheet);
+            document.getElementById('btn-export-vaastu').addEventListener('click', exportVaastuReport);
+            document.getElementById('btn-snapshot').addEventListener('click', saveSnapshot);
 
             // View mode (Phase 2)
             document.getElementById('btn-mode-dollhouse').addEventListener('click', () => setViewMode('dollhouse'));
@@ -1199,15 +1210,150 @@
 
             dxf += `0\nENDSEC\n0\nEOF\n`;
 
-            const blob = new Blob([dxf], { type: 'application/dxf' });
+            downloadBlob(new Blob([dxf], { type: 'application/dxf' }), 'architectural_layout.dxf');
+        }
+
+        // ---------- Shared helpers ----------
+        function downloadBlob(blob, filename) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'architectural_layout.dxf';
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        function safeName() {
+            const n = (document.getElementById('in-model-name').value || 'land-model').trim();
+            return n.replace(/[^a-z0-9\-_]+/gi, '_').toLowerCase();
+        }
+
+        // Shoelace area of the plot polygon (sq.ft).
+        function plotArea() {
+            if (!plotPoints || plotPoints.length < 3) return 0;
+            let a = 0;
+            for (let i = 0; i < plotPoints.length; i++) {
+                const p1 = plotPoints[i];
+                const p2 = plotPoints[(i + 1) % plotPoints.length];
+                a += p1.x * p2.y - p2.x * p1.y;
+            }
+            return Math.abs(a) / 2;
+        }
+
+        const DIR_NAME = { N: 'North', E: 'East', S: 'South', W: 'West' };
+
+        // ---------- Phase 4: Engineer summary sheet ----------
+        function exportEngineerSheet() {
+            const rows = roomsData.map(r => {
+                const area = (r.w * r.h);
+                return `<tr><td>${r.name}</td><td>${r.zone || '-'}</td><td>${r.w.toFixed(1)} × ${r.h.toFixed(1)}</td><td>${area.toFixed(0)}</td></tr>`;
+            }).join('');
+            const totalRoomArea = roomsData.reduce((s, r) => s + r.w * r.h, 0);
+
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Engineer Sheet — ${escapeHtml(document.getElementById('in-model-name').value || 'Land Model')}</title>
+<style>
+ body{font-family:Arial,Helvetica,sans-serif;margin:32px;color:#111}
+ h1{margin:0 0 4px} .sub{color:#555;margin:0 0 20px}
+ table{border-collapse:collapse;width:100%;margin:12px 0}
+ th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;font-size:14px}
+ th{background:#f2f2f2}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;max-width:520px}
+ .k{color:#555} .v{font-weight:bold}
+ .note{margin-top:20px;font-size:12px;color:#666}
+ @media print{body{margin:12mm}}
+</style></head><body>
+<h1>Home Design — Engineer Summary</h1>
+<p class="sub">Model: <b>${escapeHtml(document.getElementById('in-model-name').value || 'Untitled')}</b> · Generated ${new Date().toLocaleString()}</p>
+<h2>Plot</h2>
+<div class="grid">
+ <div class="k">Front (${DIR_NAME[config.facing]}-facing)</div><div class="v">${config.front} ft</div>
+ <div class="k">Rear</div><div class="v">${config.rear} ft</div>
+ <div class="k">Left</div><div class="v">${config.left} ft</div>
+ <div class="k">Right</div><div class="v">${config.right} ft</div>
+ <div class="k">Plot area</div><div class="v">${plotArea().toFixed(0)} sq.ft</div>
+ <div class="k">Green / setback zone</div><div class="v">${config.greenArea} sq.ft</div>
+ <div class="k">Facing</div><div class="v">${DIR_NAME[config.facing]}</div>
+</div>
+<h2>Rooms</h2>
+<table>
+ <thead><tr><th>Room</th><th>Vaastu zone</th><th>Approx size (ft)</th><th>Area (sq.ft)</th></tr></thead>
+ <tbody>${rows}</tbody>
+ <tfoot><tr><th colspan="3">Total built (approx)</th><th>${totalRoomArea.toFixed(0)}</th></tr></tfoot>
+</table>
+<p class="note">Schematic layout for discussion only. Room sizes are derived from the plot's proportional zoning and are not structurally engineered. Verify setbacks, structural design, plumbing, and local building codes with your engineer. Print this page to PDF to share.</p>
+</body></html>`;
+            downloadBlob(new Blob([html], { type: 'text/html' }), `${safeName()}_engineer_sheet.html`);
+            setStatus('Engineer sheet exported (open & print to PDF).');
+        }
+
+        // ---------- Phase 4: Vaastu compliance report ----------
+        function exportVaastuReport() {
+            // Expected Vaastu placements to check the current layout against.
+            const expected = {
+                'Pooja': 'NE', 'Kitchen': 'SE', 'Master Bed': 'SW',
+                'Living / Hall': 'N', 'Dining': 'S', 'Bath / Utility': 'NW'
+            };
+            const rows = roomsData.map(r => {
+                const want = expected[r.name];
+                let status = '—';
+                if (want) status = (r.zone === want)
+                    ? '<span style="color:#127a2b;font-weight:bold">✓ Compliant</span>'
+                    : `<span style="color:#b00">⚠ Expected ${want}</span>`;
+                return `<tr><td>${r.name}</td><td>${r.zone || '-'}</td><td>${status}</td></tr>`;
+            }).join('');
+
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Vaastu Report — ${escapeHtml(document.getElementById('in-model-name').value || 'Land Model')}</title>
+<style>
+ body{font-family:Arial,Helvetica,sans-serif;margin:32px;color:#111}
+ h1{margin:0 0 4px;color:#5b21b6} .sub{color:#555;margin:0 0 20px}
+ table{border-collapse:collapse;width:100%;margin:12px 0}
+ th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;font-size:14px}
+ th{background:#f3e8ff}
+ ul{font-size:13px;color:#333} .note{margin-top:20px;font-size:12px;color:#666}
+ @media print{body{margin:12mm}}
+</style></head><body>
+<h1>Vaastu Placement Report</h1>
+<p class="sub">Model: <b>${escapeHtml(document.getElementById('in-model-name').value || 'Untitled')}</b> · Plot faces <b>${DIR_NAME[config.facing]}</b> · Generated ${new Date().toLocaleString()}</p>
+<h2>Room placement vs. Vaastu</h2>
+<table>
+ <thead><tr><th>Room</th><th>Placed in</th><th>Vaastu check</th></tr></thead>
+ <tbody>${rows}</tbody>
+</table>
+<h2>Reference guidelines used</h2>
+<ul>
+ <li>Pooja / Mandir — North-East (Ishanya)</li>
+ <li>Kitchen — South-East (Agneya, fire zone)</li>
+ <li>Master bedroom — South-West (Nairutya)</li>
+ <li>Living / entrance — North or East</li>
+ <li>Toilets / utility — North-West / West</li>
+ <li>Center (Brahmasthan) — kept open / light</li>
+</ul>
+<p class="note">Guidance based on traditional Vastu Purush Mandala principles and is provided for discussion with a Vaastu consultant. It is not a substitute for professional Vaastu or architectural advice. Print to PDF to share.</p>
+</body></html>`;
+            downloadBlob(new Blob([html], { type: 'text/html' }), `${safeName()}_vaastu_report.html`);
+            setStatus('Vaastu report exported (open & print to PDF).');
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        // ---------- Save current 3D view as PNG ----------
+        function saveSnapshot() {
+            // Render once to be sure the buffer is current, then read the canvas.
+            renderer.render(scene, camera);
+            renderer.domElement.toBlob(blob => {
+                if (blob) {
+                    downloadBlob(blob, `${safeName()}_view.png`);
+                    setStatus('View saved as PNG.');
+                } else {
+                    setStatus('Could not capture the view.', true);
+                }
+            }, 'image/png');
         }
     </script>
 </body>
