@@ -50,6 +50,11 @@ const MIN = {
   bedroomW: 9, bedroomD: 10, living: 11, dining: 8, kitchen: 7, bath: 5,
   pooja: 5, mallanna: 6, foyer: 4, hall: 3,
 };
+// Comfortable MAXIMUM footprint (feet). Rooms should be sized to function, not
+// stretched to fill a large plot — surplus land becomes garden/verandah.
+// These bound the total house envelope; individual rooms are proportioned within it.
+const MAX = { houseW: 40, houseD: 52, corridor: 4, bandD: 14 };
+const CORRIDOR = 3.5; // circulation spine width between the wings
 
 /** Split a length into weighted parts, each at least its minimum. Returns cut positions. */
 function allocate(total: number, weights: number[], mins: number[]): number[] | null {
@@ -105,13 +110,24 @@ export function createConcept(input: SiteInput = defaultSite): HouseConcept {
     conflicts.push(`This plot (~${Math.round(input.frontage * input.depth)} sq ft) is too small for the full brief. Needs at least ~${Math.round((minW + SETBACK.front + SETBACK.side) * (minD + SETBACK.rear + SETBACK.side))} sq ft. A smaller home needs a reduced program, not compressed rooms.`);
     return model;
   }
-  model.house = { x: houseX, z: houseZ, w: usableW, d: usableD };
+  // Cap the house footprint so rooms are sized to function, not stretched across a
+  // large plot. Extra land stays as garden/forecourt. The house is pushed to the
+  // rear-east so the front (west road) keeps its forecourt + garden.
+  const builtW = Math.min(usableW, MAX.houseW);
+  const builtD = Math.min(usableD, MAX.houseD);
+  const bHouseX = houseX; // keep against the front setback (forecourt is west of it)
+  const bHouseZ = houseZ;
+  model.house = { x: bHouseX, z: bHouseZ, w: builtW, d: builtD };
 
-  // ── Degradation decisions based on available floor area ──
-  const areaSqft = usableW * usableD;
+  // ── Degradation decisions based on the (capped) built floor area ──
+  const areaSqft = builtW * builtD;
+  // A corridor is only added when the plot is wide enough for both wings PLUS it.
+  const hasCorridor = builtW >= MIN.living + CORRIDOR + MIN.bedroomW + 1;
+  const corridorW = hasCorridor ? CORRIDOR : 0;
   // rule 3: merge daily pooja into the Mallanna/pooja space when tight OR when the
   // pooja wing is too narrow to hold both side by side.
-  const wingWForPooja = usableW - allocate(usableW, [1.15, 1], [MIN.living, MIN.bedroomW])![1];
+  const poojaSplit = allocate(builtW - corridorW, [1.15, 1], [MIN.living, MIN.bedroomW]);
+  const wingWForPooja = poojaSplit ? (builtW - corridorW - poojaSplit[1]) : 0;
   let sepDailyPooja = areaSqft >= 900 && wingWForPooja >= MIN.pooja + MIN.mallanna;
   if (!sepDailyPooja) decisions.push('Tight plot: the separate daily pooja is merged into the Mallanna/pooja space.');
   // rule 5: parking degrades with forecourt width (plot depth).
@@ -119,35 +135,49 @@ export function createConcept(input: SiteInput = defaultSite): HouseConcept {
   else if (input.depth >= 32) { model.parking = { cars: 1, bikes: 2 }; decisions.push('Reduced parking to 1 car + 2 two-wheelers for the narrower forecourt.'); }
   else { model.parking = { cars: 0, bikes: 2 }; decisions.push('Very tight forecourt: two-wheeler parking only.'); }
 
-  // ── Structure: three depth bands shared by BOTH wings, plus a full-width rear
-  // master band. Consistent bands guarantee non-overlapping, gap-free rooms.
-  //   band 0 (front):  foyer|bath   ||  pooja(s)
-  //   band 1 (middle): living       ||  hall + bed2
-  //   band 2 (near-rear): dining|kitchen || bed3/study
-  //   rear band: master (full width)
-  const masterD = Math.max(MIN.bedroomD, usableD * 0.22);
-  const bodyD = usableD - masterD; // depth available for the three front bands
-  const bands = allocate(bodyD, [0.85, 1.25, 1.05], [MIN.foyer, MIN.living, MIN.dining]);
+  // ── Structure ──
+  //  columns (east-west): great-room wing | CORRIDOR spine | bedroom/pooja wing
+  //  depth bands: front (foyer|bath || pooja) | middle (living || bed2) |
+  //               near-rear (dining|kitchen || bed3) | rear master band
+  // The corridor is a real circulation spine so every private room is reached
+  // from it, not through another room.
+  const masterD = Math.min(15, Math.max(MIN.bedroomD, builtD * 0.24));
+  // Cap each of the three front bands to a comfortable depth so rooms don't become
+  // over-deep on a large plot; any surplus depth is left as rear garden.
+  const rawBodyD = builtD - masterD;
+  const bodyD = Math.min(rawBodyD, 3 * MAX.bandD);
+  const bands = allocate(bodyD, [0.85, 1.2, 1.0], [MIN.foyer, MIN.living, MIN.dining]);
   if (!bands) { conflicts.push('Plot depth is too small for the room bands at minimum sizes.'); return model; }
+  // The house depth actually used (bands + master), which may be less than builtD.
+  const usedD = bodyD + masterD;
+  model.house = { x: bHouseX, z: bHouseZ, w: builtW, d: usedD };
 
-  // Column split (east-west): great-room wing | bedroom/pooja wing.
-  const cols = allocate(usableW, [1.15, 1], [MIN.living, MIN.bedroomW]);
+  const cols = allocate(builtW - corridorW, [1.15, 1], [MIN.living, MIN.bedroomW]);
   if (!cols) { conflicts.push('Plot width is too small for both wings at minimum sizes.'); return model; }
-  const gW = cols[1];               // great-room wing width
-  const midX = houseX + gW;
-  const wingW = usableW - gW;       // bedroom/pooja wing width
+  const gW = cols[1];                       // great-room wing width
+  const corridorX = bHouseX + gW;           // corridor starts after the great-room wing
+  const midX = corridorX + corridorW;       // bedroom wing starts after the corridor
+  const wingW = builtW - gW - corridorW;    // bedroom/pooja wing width
+  const houseXX = bHouseX;
 
   for (const f of [0, 1]) {
-    const z0 = houseZ, z1 = houseZ + bands[1], z2 = houseZ + bands[2], z3 = houseZ + bodyD;
-    const zMasterEnd = houseZ + usableD;
+    const z0 = bHouseZ, z1 = bHouseZ + bands[1], z2 = bHouseZ + bands[2], z3 = bHouseZ + bodyD;
+    const zMasterEnd = bHouseZ + usedD;
+    const houseX = houseXX;
+    const usableW = builtW;
     const terrace = f === 0 ? 'mallanna' : 'terrace';
+
+    // Circulation spine (full depth of the front bands), linking foyer to the wing.
+    if (hasCorridor) makeRoom(model.rooms, 'corr', 'Passage', f, corridorX, z0, corridorW, z3 - z0, 'hall', '#f1ebe1');
 
     // Great-room wing (west column). Front band: foyer + bath side by side if it
     // fits, else foyer only (bath moves to the pooja wing edge — degradation).
-    const frontCols = allocate(gW, [1, 1.1], [MIN.foyer, MIN.bath]);
-    if (frontCols) {
-      makeRoom(model.rooms, 'foyer', f === 0 ? 'Entrance foyer' : 'Independent entry', f, houseX, z0, frontCols[1], z1 - z0, 'hall', '#ece5d8');
-      makeRoom(model.rooms, 'bath', 'Common bathroom', f, houseX + frontCols[1], z0, gW - frontCols[1], z1 - z0, 'bath', '#cbdedc');
+    // Front band: foyer takes most of the width; the common bath is capped to a
+    // realistic ~6 ft (not stretched to fill the band).
+    const bathW = Math.min(6.5, Math.max(MIN.bath, gW * 0.35));
+    if (gW - bathW >= MIN.foyer) {
+      makeRoom(model.rooms, 'foyer', f === 0 ? 'Entrance foyer' : 'Independent entry', f, houseX, z0, gW - bathW, z1 - z0, 'hall', '#ece5d8');
+      makeRoom(model.rooms, 'bath', 'Common bathroom', f, houseX + gW - bathW, z0, bathW, z1 - z0, 'bath', '#cbdedc');
     } else {
       makeRoom(model.rooms, 'foyer', f === 0 ? 'Entrance foyer' : 'Independent entry', f, houseX, z0, gW * 0.55, z1 - z0, 'hall', '#ece5d8');
       makeRoom(model.rooms, 'bath', 'Common bathroom', f, houseX + gW * 0.55, z0, gW * 0.45, z1 - z0, 'bath', '#cbdedc');
@@ -172,14 +202,24 @@ export function createConcept(input: SiteInput = defaultSite): HouseConcept {
     } else {
       makeRoom(model.rooms, terrace, f === 0 ? 'Pooja (Mallanna + daily)' : 'Open terrace', f, midX, z0, wingW, z1 - z0, f === 0 ? 'pooja' : 'outdoor', '#e6cda8');
     }
-    // Middle band: short hall + bedroom 2.
-    const hallD = Math.min(5, (z2 - z1) * 0.35);
-    makeRoom(model.rooms, 'hall', 'Hall', f, midX, z1, wingW, hallD, 'hall', '#f1ebe1');
-    makeRoom(model.rooms, 'bed2', 'Bedroom 2', f, midX, z1 + hallD, wingW, z2 - (z1 + hallD), 'bedroom', '#dfcfbd');
+    // Middle band: bedroom 2 (opens off the corridor spine — no through-rooms).
+    makeRoom(model.rooms, 'bed2', 'Bedroom 2', f, midX, z1, wingW, z2 - z1, 'bedroom', '#dfcfbd');
     // Near-rear band: bedroom 3 / study.
     makeRoom(model.rooms, f === 0 ? 'bed3' : 'utility', f === 0 ? 'Bedroom 3' : 'Study', f, midX, z2, wingW, z3 - z2, f === 0 ? 'bedroom' : 'utility', '#e1d6c6');
-    // Rear band: master spans full width.
-    makeRoom(model.rooms, 'master', 'Master bedroom', f, houseX, z3, usableW, zMasterEnd - z3, 'bedroom', '#d8c6b0');
+    // Rear band: master bedroom sized to ~14–16 ft wide (not full width) + attached
+    // bath; the remaining rear width becomes a utility/store so no room is oversized.
+    const masterD2 = zMasterEnd - z3;
+    if (builtW >= 26 && masterD2 >= 8) {
+      // Compute final widths first, then place master | mbath | store left-to-right.
+      const bathW = Math.min(7, Math.max(MIN.bath, builtW * 0.2));
+      const masterW = Math.min(16, Math.max(MIN.bedroomW + 3, usableW - bathW - 6));  // cap master ≈14–16 ft
+      const storeW = usableW - bathW - masterW;                       // leftover -> store/wardrobe
+      makeRoom(model.rooms, 'master', 'Master bedroom', f, houseX, z3, masterW, masterD2, 'bedroom', '#d8c6b0');
+      makeRoom(model.rooms, 'mbath', f === 0 ? 'Master bath' : 'Bath', f, houseX + masterW, z3, bathW, masterD2, 'bath', '#cbdedc');
+      if (storeW >= MIN.bath) makeRoom(model.rooms, 'store', f === 0 ? 'Store / wardrobe' : 'Store', f, houseX + masterW + bathW, z3, storeW, masterD2, 'utility', '#ded8cb');
+    } else {
+      makeRoom(model.rooms, 'master', 'Master bedroom', f, houseX, z3, usableW, masterD2, 'bedroom', '#d8c6b0');
+    }
   }
 
   buildWalls(model);
@@ -239,25 +279,32 @@ function connectRooms(model: HouseConcept, sepDailyPooja: boolean) {
   };
   for (const f of [0, 1]) {
     const terrace = f === 0 ? 'mallanna' : 'terrace';
+    const hasCorr = model.rooms.some(r => r.id === `${f}-corr`);
+    const hub = hasCorr ? 'corr' : 'living';   // circulation hub for private rooms
     // Open-plan great room.
     connect(f, 'foyer', 'living', 4);
     connect(f, 'living', 'dining', 6);
     connect(f, 'dining', 'kitchen', 5);
     connect(f, 'foyer', 'bath', 2.5);
-    // Pooja wing (front-east). daily|bath share x=midX; mallanna|hall share z=z1.
-    // The hall is the gateway from the great room into the private/pooja wing.
-    connect(f, 'living', 'hall', 3) || connect(f, 'dining', 'hall', 3) || connect(f, 'bath', 'hall', 3);
-    if (sepDailyPooja) {
-      connect(f, terrace, 'daily', 3);                 // mallanna|daily share the vertical split
-      connect(f, 'daily', 'bath', 2.5) || connect(f, 'daily', 'hall', 3) || connect(f, 'daily', 'bed2', 3);
-      connect(f, terrace, 'hall', 3) || connect(f, terrace, 'bed2', 3);
-    } else {
-      connect(f, terrace, 'bath', 3) || connect(f, terrace, 'hall', 3) || connect(f, terrace, 'bed2', 3);
+    // Corridor spine links the great room to the private wing.
+    if (hasCorr) {
+      connect(f, 'foyer', 'corr', 3) || connect(f, 'living', 'corr', 3);
+      connect(f, 'living', 'corr', 3);
     }
-    // Bedroom wing.
-    connect(f, 'hall', 'bed2', 3);
-    connect(f, 'bed2', f === 0 ? 'bed3' : 'utility', 3) || connect(f, 'hall', f === 0 ? 'bed3' : 'utility', 3);
-    connect(f, 'master', 'dining', 3) || connect(f, 'master', 'kitchen', 3) || connect(f, 'master', f === 0 ? 'bed3' : 'utility', 3);
+    // Private rooms + pooja open off the hub (corridor, or living if no corridor).
+    if (sepDailyPooja) {
+      connect(f, terrace, 'daily', 3);
+      connect(f, hub, 'daily', 3) || connect(f, 'daily', 'bath', 2.5) || connect(f, 'daily', 'bed2', 3);
+      connect(f, hub, terrace, 3) || connect(f, terrace, 'bed2', 3);
+    } else {
+      connect(f, hub, terrace, 3) || connect(f, terrace, 'bath', 3) || connect(f, terrace, 'bed2', 3);
+    }
+    connect(f, hub, 'bed2', 3) || connect(f, 'living', 'bed2', 3);
+    connect(f, hub, f === 0 ? 'bed3' : 'utility', 3) || connect(f, 'bed2', f === 0 ? 'bed3' : 'utility', 3);
+    connect(f, hub, 'master', 3) || connect(f, 'master', 'dining', 3) || connect(f, 'master', 'kitchen', 3) || connect(f, 'master', f === 0 ? 'bed3' : 'utility', 3);
+    // Master's attached bath + store open off the master.
+    connect(f, 'master', 'mbath', 2.5);
+    connect(f, 'master', 'store', 2.5) || connect(f, 'mbath', 'store', 2.5) || connect(f, hub, 'store', 2.5);
     // Front entrance: a door on any exterior wall of the foyer (prefer the west road side).
     const entryId = `${f}-foyer`;
     const foyerExt = model.walls.filter(w => w.rooms.length === 1 && w.rooms[0] === entryId && length(w) > 2.5);

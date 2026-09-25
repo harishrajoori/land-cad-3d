@@ -20,6 +20,26 @@ describe('proportional house concept', () => {
     }
   });
 
+  it('sizes rooms sensibly (no oversized rooms) and provides a circulation spine', () => {
+    for (const input of SIZES) {
+      const m = createConcept(input);
+      // No habitable room should exceed a sensible maximum (bedrooms/living capped).
+      for (const r of m.rooms.filter(r => ['bedroom', 'living'].includes(r.use))) {
+        expect(r.w, `${r.id} width`).toBeLessThanOrEqual(24);
+        expect(r.d, `${r.id} depth`).toBeLessThanOrEqual(22);
+      }
+      // On comfortable plots the master is a right-sized room (not a full-width band)
+      // with an attached bath. Very small plots may give the master the full width.
+      const master = m.rooms.find(r => r.id === '0-master')!;
+      if (input.frontage * input.depth >= 2500) {
+        expect(master.w).toBeLessThanOrEqual(17);
+        expect(m.rooms.some(r => r.id === '0-mbath')).toBe(true);
+      }
+      // On comfortable plots there is a circulation passage.
+      if (input.depth >= 45) expect(m.rooms.some(r => r.id === '0-corr')).toBe(true);
+    }
+  });
+
   it('keeps all rooms inside the plot, positive-sized, and non-overlapping', () => {
     for (const input of SIZES) {
       const m = createConcept(input);
