@@ -112,33 +112,44 @@ export function createHouseViewer(host: HTMLElement, onWalk: (walking: boolean) 
     if (cutaway && !w.openings.some(o => o.kind === 'door')) box(group, len / 2, limit + .025, 0, len, .05, .52, '#c2b19a');
   }
   function shrine(r: Space) {
-    const x = r.x + r.w / 2, z = r.z + 3;
+    // Parametric shrine: platform, four pillars, canopy and offerings all derived
+    // from the actual room size so it fits at any scale (no fixed overflow).
     const g = new THREE.Group(); g.name = 'Mallanna shrine — raised platform, four pillars and offerings'; world.add(g);
-    box(g, x, .5, z, 6, 1, 4, '#d7bda0');
-    box(g, x, 1.02, z, 6.1, .12, 4.1, '#f1e1bf');
-    box(g, x, .2, z + 2.45, 4, .4, .9, '#d7bda0');
-    // Four posts and an ornamented canopy, kept distinct from structural columns.
-    for (const dx of [-2.65, 2.65]) for (const dz of [-1.65, 1.65]) {
-      cylinder(g, x + dx, 3.6, z + dz, .14, 5.2, '#a57635');
-      for (const y of [1.2, 1.5, 5.8, 6.1]) cylinder(g, x + dx, y, z + dz, .23, .16, '#d6b564');
+    const pad = 1;                                        // clearance from walls
+    const platW = Math.min(6, r.w - 2 * pad);             // platform width, capped
+    const platD = Math.min(4, r.d * 0.4);                 // platform depth = back portion
+    const x = r.x + r.w / 2;                              // centred on room width
+    const z = r.z + pad + platD / 2;                      // set against the back (front) wall
+    const px = platW / 2 - 0.35, pz = platD / 2 - 0.35;   // pillar offsets inside the platform
+    const canopyY = 5.2;
+
+    box(g, x, .5, z, platW, 1, platD, '#d7bda0');                 // raised platform
+    box(g, x, 1.02, z, platW + .1, .12, platD + .1, '#f1e1bf');   // platform top
+    // Four decorated pillars + canopy, sized to the platform (shrine features, not columns).
+    for (const dx of [-px, px]) for (const dz of [-pz, pz]) {
+      cylinder(g, x + dx, canopyY / 2 + 1, z + dz, .13, canopyY, '#a57635');
+      for (const y of [1.2, 1.5, canopyY + .6, canopyY + .9]) cylinder(g, x + dx, y, z + dz, .2, .14, '#d6b564');
     }
-    box(g, x, 6.35, z, 6.5, .25, 4.5, '#80522e');
-    box(g, x, 6.6, z, 6.1, .25, 4.1, '#b1843c');
-    // Garland over the front beam; decoration only, not an invented ritual pattern.
-    for (let i = 0; i <= 24; i++) {
-      const bead = new THREE.Mesh(new THREE.SphereGeometry(.13, 8, 8), mat(i % 3 ? '#e8a323' : '#a55630'));
-      bead.position.set(x - 2.8 + i * 5.6 / 24, 6.12 - .35 * Math.sin(i / 24 * Math.PI * 3) ** 2, z + 2.22); g.add(bead);
+    box(g, x, canopyY + 1.15, z, platW + .5, .25, platD + .5, '#80522e');   // canopy
+    box(g, x, canopyY + 1.4, z, platW + .1, .25, platD + .1, '#b1843c');
+    // Garland across the front beam.
+    for (let i = 0; i <= 20; i++) {
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(.12, 8, 8), mat(i % 3 ? '#e8a323' : '#a55630'));
+      bead.position.set(x - platW / 2 + i * platW / 20, canopyY + .9 - .3 * Math.sin(i / 20 * Math.PI * 3) ** 2, z + platD / 2 + .12); g.add(bead);
     }
-    box(g, x, 1.8, z - .3, 3.5, 1.5, 1.5, '#8c5c3b');
-    box(g, x, 2.6, z - .3, 3.7, .12, 1.7, '#c7a568');
-    // Empty framed place-holder until the family supplies its preferred deity image.
-    box(g, x, 3.7, z - .5, 2.1, 2, .18, '#b78c3c');
-    box(g, x, 3.7, z - .39, 1.75, 1.65, .05, '#755034');
-    box(g, x, 1.25, z + 1, 3.4, .12, 1, '#c09859');
-    for (const dx of [-1, 0, 1]) cylinder(g, x + dx, 1.35, z + 1, .29, .08, '#d4b66c');
-    // Four floor cushions, outside the platform and offering footprint.
-    for (const dx of [-2, 2]) for (const dz of [4, 7]) box(g, x + dx, .12, z + dz, 1.8, .24, 1.8, '#b07b58');
-    text(labels, 'Mallanna · 4 people', x, 7.3, z + 4, 10);
+    // Table-like shrine surface + framed deity placeholder at the back of the platform.
+    const tblW = Math.min(3.5, platW - 1);
+    box(g, x, 1.8, z - platD / 4, tblW, 1.5, Math.min(1.5, platD / 2), '#8c5c3b');
+    box(g, x, 2.6, z - platD / 4, tblW + .2, .12, Math.min(1.7, platD / 2 + .2), '#c7a568');
+    box(g, x, 3.7, z - platD / 2 + .1, Math.min(2.1, tblW), 2, .18, '#b78c3c');
+    // Prasadam tray in front of the deity, on the platform.
+    box(g, x, 1.25, z + platD / 4, Math.min(3.4, platW - 1), .12, Math.min(1, platD / 3), '#c09859');
+    // Floor cushions for ~4 people, in the clear room space in front of the platform.
+    const cushZ0 = r.z + platD + pad + 1;
+    if (r.d - platD - pad > 3) for (const dx of [-1.5, 1.5]) for (const dz of [0, 2.2]) {
+      if (cushZ0 + dz < r.z + r.d - 1) box(g, x + dx, .12, cushZ0 + dz, 1.6, .24, 1.6, '#b07b58');
+    }
+    text(labels, 'Mallanna · 4 people', x, canopyY + 2, z, Math.min(10, r.w * .9));
   }
   function stairs() {
     const s = model.stair, h = model.floorHeight, half = h / 2, run = 10, n = 9;

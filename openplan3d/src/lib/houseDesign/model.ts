@@ -1,8 +1,23 @@
 import profile from '../../../../requirements/home-requirements.json';
 
-/** Concept dimensions are feet; x runs east and z runs south. North never rotates. */
+/**
+ * Proportional generative house model.
+ *
+ * The same fixed requirements drive ANY plot size. Instead of hardcoded
+ * coordinates, rooms are allocated proportionally into the buildable rectangle
+ * with per-room minimum sizes, and the program degrades gracefully as space
+ * shrinks (owner's rules):
+ *   1) drop furniture that no longer fits its room
+ *   2) shrink the Mallanna room toward its minimum
+ *   3) below a threshold, merge the separate daily pooja into the Mallanna/pooja
+ *   4) reduce parking (2 cars + 2 bikes -> 1 car -> bikes only)
+ *   5) if the essential rooms cannot fit at minimum size, report it honestly
+ *
+ * Dimensions are feet; x runs east, z runs south; north is up (never rotates).
+ */
+
 export const requirements = profile.fixed;
-export const REVISION = 'Concept 01';
+export const REVISION = 'Concept 02 (proportional)';
 export interface SiteInput { frontage: number; depth: number; }
 export interface Rect { x: number; z: number; w: number; d: number; }
 export interface Space extends Rect { id: string; name: string; floor: number; color: string; use: string; }
@@ -11,10 +26,11 @@ export interface Segment { id: string; x1: number; z1: number; x2: number; z2: n
 export interface Furnishing { id: string; catalog: string; x: number; z: number; floor: number; rotation: number; color?: string; }
 export interface Connection { from: string; to: string; floor: number; }
 export interface HouseConcept {
-  input: SiteInput; valid: boolean; conflicts: string[]; assumptions: string[];
+  input: SiteInput; valid: boolean; conflicts: string[]; assumptions: string[]; decisions: string[];
   rooms: Space[]; walls: Segment[]; furniture: Furnishing[]; connections: Connection[];
   house: Rect; patnam: Rect; stair: Rect; gardens: Rect[]; paths: Rect[];
   floorHeight: number; footprint: number; gardenArea: number;
+  parking: { cars: number; bikes: number };
 }
 export const defaultSite: SiteInput = { frontage: 80, depth: 50 };
 export const area = (r: Rect) => r.w * r.d;
@@ -24,71 +40,181 @@ export function contains(r: Rect, x: number, z: number, margin = 0) {
 export function overlaps(a: Rect, b: Rect) {
   return a.x < b.x + b.w - 1e-6 && a.x + a.w > b.x + 1e-6 && a.z < b.z + b.d - 1e-6 && a.z + a.d > b.z + 1e-6;
 }
+export const length = (s: Segment) => Math.hypot(s.x2 - s.x1, s.z2 - s.z1);
+export const clearSize = (r: Space) => `${(r.w - .5).toFixed(1)} × ${(r.d - .5).toFixed(1)} ft`;
+
+// ── Setbacks (feet). Front is the west road side; scale-independent. ──
+const SETBACK = { front: 12, rear: 4, side: 3 };
+// Minimum livable room sizes (feet). Below these we degrade rather than shrink further.
+const MIN = {
+  bedroomW: 9, bedroomD: 10, living: 11, dining: 8, kitchen: 7, bath: 5,
+  pooja: 5, mallanna: 6, foyer: 4, hall: 3,
+};
+
+/** Split a length into weighted parts, each at least its minimum. Returns cut positions. */
+function allocate(total: number, weights: number[], mins: number[]): number[] | null {
+  const minSum = mins.reduce((a, b) => a + b, 0);
+  if (total < minSum - 1e-6) return null; // cannot fit even at minimums
+  const extra = total - minSum;
+  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
+  const sizes = weights.map((w, i) => mins[i] + extra * (w / wSum));
+  const cuts = [0];
+  let acc = 0;
+  for (const s of sizes) { acc += s; cuts.push(acc); }
+  cuts[cuts.length - 1] = total;
+  return cuts;
+}
+
+function makeRoom(rooms: Space[], id: string, name: string, floor: number, x: number, z: number, w: number, d: number, use: string, color: string) {
+  rooms.push({ id: `${floor}-${id}`, name, floor, x, z, w, d, use, color });
+}
+
 export function createConcept(input: SiteInput = defaultSite): HouseConcept {
   const conflicts: string[] = [];
-  if (![input.frontage, input.depth].every(n => Number.isFinite(n) && n > 0 && n <= 200)) conflicts.push('Enter positive plot dimensions up to 200 ft.');
-  if (input.frontage < 80 || input.depth < 50) conflicts.push('This arrangement needs at least 80 ft west frontage × 50 ft depth. Your requirements are retained; a smaller site needs a different layout, not scaled-down rooms.');
+  const decisions: string[] = [];
+  const okDims = [input.frontage, input.depth].every(n => Number.isFinite(n) && n > 0 && n <= 300);
+  if (!okDims) conflicts.push('Enter positive plot dimensions up to 300 ft.');
+
   const model: HouseConcept = {
-    input: { ...input }, valid: !conflicts.length, conflicts, rooms: [], walls: [], furniture: [], connections: [],
-    house: { x: 18, z: 4, w: input.depth - 21, d: input.frontage - 14 },
-    patnam: { x: 1, z: 35, w: 12, d: 12 }, stair: { x: 3, z: 53, w: 9, d: 17 },
+    input: { ...input }, valid: false, conflicts, decisions,
+    rooms: [], walls: [], furniture: [], connections: [],
+    house: { x: 0, z: 0, w: 0, d: 0 }, patnam: { x: 0, z: 0, w: 0, d: 0 }, stair: { x: 0, z: 0, w: 0, d: 0 },
     gardens: [], paths: [], floorHeight: 10.5, footprint: 0, gardenArea: 0,
+    parking: { cars: 0, bikes: 0 },
     assumptions: [
       'Rectangular west-facing site; north is up. Other facings and irregular boundaries need a new layout.',
-      'Concept offsets: 18 ft front forecourt, 3 ft east, 4 ft north and 10 ft south. These are design assumptions, not verified local setbacks.',
-      'Walls are 6 in thick; floor-to-floor height is 10 ft 6 in. Room schedule gives clear dimensions between wall faces.',
-      'Outdoor Patnam reserve: 12 × 12 ft, with its west edge inside the plot. Confirm the ritual footprint with your pujari.',
-      'Mallanna shrine: 6 × 4 ft raised platform, 1 ft high; four decorated pillars and a canopy. Dimensions and deity facing need your review; no deity likeness is invented.',
-      'Open-plan great room: living, dining and kitchen flow together in the west/front half, entered through a foyer — a home layout, not room-off-a-corridor. Bedrooms form a private rear wing off a short hall. Review room directions against your Vaastu consultant.',
-      'First floor mirrors the ground shell: two bedrooms, the open living/dining/kitchen, bath and a study; the dedicated external stair enters its own foyer.',
-      'Stair geometry, structure, approvals, vehicle manoeuvring and accessibility need engineer review. Eye-level exploration is a visual inspection, not a stair or clearance certification.'
-    ]
+      `Setbacks used: ${SETBACK.front} ft front forecourt, ${SETBACK.rear} ft rear, ${SETBACK.side} ft sides. Design assumptions, not verified local rules.`,
+      'Rooms are allocated proportionally to the plot with minimum livable sizes; furniture, the Mallanna room, the separate daily pooja and parking are reduced in that order when space is tight.',
+      'Walls ~6 in; floor-to-floor 10 ft 6 in. Room schedule gives clear dimensions between wall faces.',
+      'Mallanna shrine (raised platform, table, four decorated pillars) is generated from the actual room size. Heights, materials and deity facing need your review.',
+      'Stair, structure, approvals, vehicle manoeuvring and accessibility need engineer review.',
+    ],
   };
-  if (!model.valid) return model;
-  const A = 18, D = input.depth - 3, B = A + (D - A - 4) / 2, C = B + 4;
-  const Y = (y: number) => 4 + (y - 4) * (input.frontage - 14) / 66;
-  const room = (id: string, name: string, floor: number, x1: number, z1: number, x2: number, z2: number, use: string, color: string) => {
-    model.rooms.push({ id: `${floor}-${id}`, name, floor, x: x1, z: Y(z1), w: x2 - x1, d: Y(z2) - Y(z1), use, color });
-  };
-  for (const f of [0, 1]) {
-    // Home-style, not hotel: a compact front foyer opens into a large connected
-    // living+dining+kitchen "great room" (the west/front half). Bedrooms sit in a
-    // private rear wing served by a SHORT hall — no full-length spine corridor.
-    // Vaastu intent kept: kitchen SE, master SW/rear, pooja NE band.
-    room('foyer', f === 0 ? 'Entrance foyer' : 'Independent entry', f, A, 4, A + 9, 14, 'hall', '#ece5d8');
-    room('bath', 'Common bathroom', f, A + 9, 4, B, 14, 'bath', '#cbdedc');
-    room('daily', f === 0 ? 'Daily pooja' : 'Pooja / quiet', f, B, 4, C, 14, 'pooja', '#efd6ab');
-    room('living', 'Living', f, A, 14, B, 34, 'living', '#e6d4bd');
-    room('dining', 'Dining', f, A, 34, B, 52, 'dining', '#e9dac4');
-    room('kitchen', 'Kitchen', f, B, 34, C, 52, 'kitchen', '#d3d9c5');
-    room(f === 0 ? 'mallanna' : 'terrace', f === 0 ? 'Mallanna pooja' : 'Open terrace', f, B, 14, C, 34, f === 0 ? 'pooja' : 'outdoor', '#e6cda8');
-    room('hall', 'Hall', f, C, 14, D, 24, 'hall', '#f1ebe1');
-    room('bed2', 'Bedroom 2', f, C, 4, D, 14, 'bedroom', '#dfcfbd');
-    // Ground floor: 3 bedrooms (master, bed2, bed3). First floor: 2 bedrooms
-    // (master, bed2) — bed3's slot becomes a study/utility upstairs.
-    room(f === 0 ? 'bed3' : 'utility', f === 0 ? 'Bedroom 3' : 'Study', f, C, 24, D, 40, f === 0 ? 'bedroom' : 'utility', '#e1d6c6');
-    room('master', 'Master bedroom', f, A, 52, C, 70, 'bedroom', '#d8c6b0');
-    room(f === 0 ? 'store' : 'store', f === 0 ? 'Store / dressing' : 'Store', f, C, 40, D, 70, 'utility', '#ded8cb');
+  if (!okDims) return model;
+
+  // ── Buildable rectangle (the house footprint area within setbacks) ──
+  // x: east across depth axis (plot depth runs E-W); z: south across frontage.
+  const usableW = input.depth - SETBACK.front - SETBACK.side;   // east-west extent of the house
+  const usableD = input.frontage - SETBACK.rear - SETBACK.side; // north-south extent
+  const houseX = SETBACK.front, houseZ = SETBACK.rear;
+
+  // Absolute minimum to hold the essential ground program in two side-by-side wings.
+  const minW = MIN.living + MIN.bedroomW + 1;              // great room + bedroom wing columns
+  const minD = MIN.foyer + MIN.living + MIN.bedroomD + 2;  // three depth bands
+  if (usableW < minW || usableD < minD) {
+    conflicts.push(`This plot (~${Math.round(input.frontage * input.depth)} sq ft) is too small for the full brief. Needs at least ~${Math.round((minW + SETBACK.front + SETBACK.side) * (minD + SETBACK.rear + SETBACK.side))} sq ft. A smaller home needs a reduced program, not compressed rooms.`);
+    return model;
   }
-  // Split all coincident boundaries at room corners, yielding one wall per shared segment.
+  model.house = { x: houseX, z: houseZ, w: usableW, d: usableD };
+
+  // ── Degradation decisions based on available floor area ──
+  const areaSqft = usableW * usableD;
+  // rule 3: merge daily pooja into the Mallanna/pooja space when tight OR when the
+  // pooja wing is too narrow to hold both side by side.
+  const wingWForPooja = usableW - allocate(usableW, [1.15, 1], [MIN.living, MIN.bedroomW])![1];
+  let sepDailyPooja = areaSqft >= 900 && wingWForPooja >= MIN.pooja + MIN.mallanna;
+  if (!sepDailyPooja) decisions.push('Tight plot: the separate daily pooja is merged into the Mallanna/pooja space.');
+  // rule 5: parking degrades with forecourt width (plot depth).
+  if (input.depth >= 45) model.parking = { cars: 2, bikes: 2 };
+  else if (input.depth >= 32) { model.parking = { cars: 1, bikes: 2 }; decisions.push('Reduced parking to 1 car + 2 two-wheelers for the narrower forecourt.'); }
+  else { model.parking = { cars: 0, bikes: 2 }; decisions.push('Very tight forecourt: two-wheeler parking only.'); }
+
+  // ── Structure: three depth bands shared by BOTH wings, plus a full-width rear
+  // master band. Consistent bands guarantee non-overlapping, gap-free rooms.
+  //   band 0 (front):  foyer|bath   ||  pooja(s)
+  //   band 1 (middle): living       ||  hall + bed2
+  //   band 2 (near-rear): dining|kitchen || bed3/study
+  //   rear band: master (full width)
+  const masterD = Math.max(MIN.bedroomD, usableD * 0.22);
+  const bodyD = usableD - masterD; // depth available for the three front bands
+  const bands = allocate(bodyD, [0.85, 1.25, 1.05], [MIN.foyer, MIN.living, MIN.dining]);
+  if (!bands) { conflicts.push('Plot depth is too small for the room bands at minimum sizes.'); return model; }
+
+  // Column split (east-west): great-room wing | bedroom/pooja wing.
+  const cols = allocate(usableW, [1.15, 1], [MIN.living, MIN.bedroomW]);
+  if (!cols) { conflicts.push('Plot width is too small for both wings at minimum sizes.'); return model; }
+  const gW = cols[1];               // great-room wing width
+  const midX = houseX + gW;
+  const wingW = usableW - gW;       // bedroom/pooja wing width
+
+  for (const f of [0, 1]) {
+    const z0 = houseZ, z1 = houseZ + bands[1], z2 = houseZ + bands[2], z3 = houseZ + bodyD;
+    const zMasterEnd = houseZ + usableD;
+    const terrace = f === 0 ? 'mallanna' : 'terrace';
+
+    // Great-room wing (west column). Front band: foyer + bath side by side if it
+    // fits, else foyer only (bath moves to the pooja wing edge — degradation).
+    const frontCols = allocate(gW, [1, 1.1], [MIN.foyer, MIN.bath]);
+    if (frontCols) {
+      makeRoom(model.rooms, 'foyer', f === 0 ? 'Entrance foyer' : 'Independent entry', f, houseX, z0, frontCols[1], z1 - z0, 'hall', '#ece5d8');
+      makeRoom(model.rooms, 'bath', 'Common bathroom', f, houseX + frontCols[1], z0, gW - frontCols[1], z1 - z0, 'bath', '#cbdedc');
+    } else {
+      makeRoom(model.rooms, 'foyer', f === 0 ? 'Entrance foyer' : 'Independent entry', f, houseX, z0, gW * 0.55, z1 - z0, 'hall', '#ece5d8');
+      makeRoom(model.rooms, 'bath', 'Common bathroom', f, houseX + gW * 0.55, z0, gW * 0.45, z1 - z0, 'bath', '#cbdedc');
+    }
+    makeRoom(model.rooms, 'living', 'Living', f, houseX, z1, gW, z2 - z1, 'living', '#e6d4bd');
+    // Dining + kitchen side by side if the wing is wide enough, else stacked in the band.
+    const dkCols = allocate(gW, [1, 1], [MIN.dining, MIN.kitchen]);
+    if (dkCols) {
+      makeRoom(model.rooms, 'dining', 'Dining', f, houseX, z2, dkCols[1], z3 - z2, 'dining', '#e9dac4');
+      makeRoom(model.rooms, 'kitchen', 'Kitchen', f, houseX + dkCols[1], z2, gW - dkCols[1], z3 - z2, 'kitchen', '#d3d9c5');
+    } else {
+      const mid = z2 + (z3 - z2) * 0.5;
+      makeRoom(model.rooms, 'dining', 'Dining', f, houseX, z2, gW, mid - z2, 'dining', '#e9dac4');
+      makeRoom(model.rooms, 'kitchen', 'Kitchen', f, houseX, mid, gW, z3 - mid, 'kitchen', '#d3d9c5');
+    }
+
+    // Bedroom/pooja wing (east column). Front band = pooja(s).
+    const pCols = sepDailyPooja ? allocate(wingW, [1, 1.3], [MIN.pooja, MIN.mallanna])! : null;
+    if (sepDailyPooja && pCols) {
+      makeRoom(model.rooms, 'daily', f === 0 ? 'Daily pooja' : 'Pooja / quiet', f, midX, z0, pCols[1], z1 - z0, 'pooja', '#efd6ab');
+      makeRoom(model.rooms, terrace, f === 0 ? 'Mallanna pooja' : 'Open terrace', f, midX + pCols[1], z0, wingW - pCols[1], z1 - z0, f === 0 ? 'pooja' : 'outdoor', '#e6cda8');
+    } else {
+      makeRoom(model.rooms, terrace, f === 0 ? 'Pooja (Mallanna + daily)' : 'Open terrace', f, midX, z0, wingW, z1 - z0, f === 0 ? 'pooja' : 'outdoor', '#e6cda8');
+    }
+    // Middle band: short hall + bedroom 2.
+    const hallD = Math.min(5, (z2 - z1) * 0.35);
+    makeRoom(model.rooms, 'hall', 'Hall', f, midX, z1, wingW, hallD, 'hall', '#f1ebe1');
+    makeRoom(model.rooms, 'bed2', 'Bedroom 2', f, midX, z1 + hallD, wingW, z2 - (z1 + hallD), 'bedroom', '#dfcfbd');
+    // Near-rear band: bedroom 3 / study.
+    makeRoom(model.rooms, f === 0 ? 'bed3' : 'utility', f === 0 ? 'Bedroom 3' : 'Study', f, midX, z2, wingW, z3 - z2, f === 0 ? 'bedroom' : 'utility', '#e1d6c6');
+    // Rear band: master spans full width.
+    makeRoom(model.rooms, 'master', 'Master bedroom', f, houseX, z3, usableW, zMasterEnd - z3, 'bedroom', '#d8c6b0');
+  }
+
+  buildWalls(model);
+  connectRooms(model, sepDailyPooja);
+  placeWindows(model);
+  placeFurniture(model);
+  placeParkingAndOutdoor(model, input);
+
+  model.footprint = area(model.house);
+  model.gardenArea = model.gardens.reduce((n, r) => n + area(r), 0);
+  model.valid = conflicts.length === 0 && roomReachability(model, 0).length === 0;
+  if (!model.valid && conflicts.length === 0) conflicts.push('Could not connect every room on this plot; the layout needs manual review.');
+  return model;
+}
+
+// ── Walls: split coincident room boundaries into shared segments ──
+function buildWalls(model: HouseConcept) {
   for (const floor of [0, 1]) {
     const rooms = model.rooms.filter(r => r.floor === floor);
     const edges = rooms.flatMap(r => [
       { x1: r.x, z1: r.z, x2: r.x + r.w, z2: r.z, room: r.id },
       { x1: r.x, z1: r.z + r.d, x2: r.x + r.w, z2: r.z + r.d, room: r.id },
       { x1: r.x, z1: r.z, x2: r.x, z2: r.z + r.d, room: r.id },
-      { x1: r.x + r.w, z1: r.z, x2: r.x + r.w, z2: r.z + r.d, room: r.id }
+      { x1: r.x + r.w, z1: r.z, x2: r.x + r.w, z2: r.z + r.d, room: r.id },
     ]);
     const unique = new Map<string, Segment>();
     for (const e of edges) {
-      const horizontal = e.z1 === e.z2;
+      const horizontal = Math.abs(e.z1 - e.z2) < 1e-6;
       const min = horizontal ? e.x1 : e.z1, max = horizontal ? e.x2 : e.z2;
       const cuts = [...new Set(edges.flatMap(o => [{ x: o.x1, z: o.z1 }, { x: o.x2, z: o.z2 }])
-        .filter(p => Math.abs((horizontal ? p.z - e.z1 : p.x - e.x1)) < 1e-6)
-        .map(p => horizontal ? p.x : p.z).filter(t => t >= min && t <= max))].sort((a, b) => a - b);
+        .filter(p => Math.abs(horizontal ? p.z - e.z1 : p.x - e.x1) < 1e-6)
+        .map(p => horizontal ? p.x : p.z).filter(t => t >= min - 1e-6 && t <= max + 1e-6))].sort((a, b) => a - b);
       for (let i = 0; i < cuts.length - 1; i++) {
         const coords = horizontal ? [cuts[i], e.z1, cuts[i + 1], e.z2] : [e.x1, cuts[i], e.x2, cuts[i + 1]];
-        const key = coords.map(v => v.toFixed(5)).join(',');
+        const key = coords.map(v => v.toFixed(4)).join(',');
         const existing = unique.get(key);
         if (existing) { if (!existing.rooms.includes(e.room)) existing.rooms.push(e.room); }
         else unique.set(key, { id: `wall-${floor}-${unique.size}`, x1: coords[0], z1: coords[1], x2: coords[2], z2: coords[3], floor, rooms: [e.room], openings: [] });
@@ -96,97 +222,142 @@ export function createConcept(input: SiteInput = defaultSite): HouseConcept {
     }
     model.walls.push(...unique.values());
   }
-  const connect = (floor: number, a: string, b: string, width = 3) => {
+}
+
+// ── Doors: connect adjacent rooms that share a wall long enough ──
+function connectRooms(model: HouseConcept, sepDailyPooja: boolean) {
+  const connect = (floor: number, a: string, b: string, want = 3): boolean => {
     const from = `${floor}-${a}`, to = `${floor}-${b}`;
-    const wall = model.walls.filter(w => w.rooms.includes(from) && w.rooms.includes(to)).sort((a, b) => length(b) - length(a))[0];
-    if (!wall || length(wall) < width + .6) throw new Error(`No room for ${a} → ${b} door`);
+    const wall = model.walls.filter(w => w.rooms.includes(from) && w.rooms.includes(to) && !w.openings.length)
+      .sort((p, q) => length(q) - length(p))[0];
+    if (!wall) return false;
+    const width = Math.min(want, length(wall) - 1);
+    if (width < 2) return false;
     wall.openings.push({ offset: length(wall) / 2, width, bottom: 0, height: 7, kind: 'door' });
     model.connections.push({ from, to, floor });
+    return true;
   };
   for (const f of [0, 1]) {
-    // Connections use only real shared edges. Open-plan great room: the
-    // living<->dining<->kitchen openings are wide so they read as one space.
     const terrace = f === 0 ? 'mallanna' : 'terrace';
-    connect(f, 'foyer', 'living', 4);       // foyer|living  (9)
-    connect(f, 'living', 'dining', 8);      // wide open plan (12.5)
-    connect(f, 'dining', 'kitchen', 6);     // (18)
-    connect(f, 'foyer', 'bath', 2.5);       // (10)
-    connect(f, 'bath', 'daily', 3);         // (10)
-    connect(f, 'living', terrace, 4);       // living|mallanna (20)
-    connect(f, terrace, 'hall', 3.5);       // mallanna|hall (10) -> gateway to bedroom wing
-    connect(f, 'hall', 'bed2', 3);          // (12.5)
-    connect(f, 'hall', f === 0 ? 'bed3' : 'utility', 3); // hall|bed3 (12.5)
-    connect(f, 'dining', 'master', 3);      // (12.5)
-    connect(f, 'master', 'store', 3);       // master|store share x=C (18)
+    // Open-plan great room.
+    connect(f, 'foyer', 'living', 4);
+    connect(f, 'living', 'dining', 6);
+    connect(f, 'dining', 'kitchen', 5);
+    connect(f, 'foyer', 'bath', 2.5);
+    // Pooja wing (front-east). daily|bath share x=midX; mallanna|hall share z=z1.
+    // The hall is the gateway from the great room into the private/pooja wing.
+    connect(f, 'living', 'hall', 3) || connect(f, 'dining', 'hall', 3) || connect(f, 'bath', 'hall', 3);
+    if (sepDailyPooja) {
+      connect(f, terrace, 'daily', 3);                 // mallanna|daily share the vertical split
+      connect(f, 'daily', 'bath', 2.5) || connect(f, 'daily', 'hall', 3) || connect(f, 'daily', 'bed2', 3);
+      connect(f, terrace, 'hall', 3) || connect(f, terrace, 'bed2', 3);
+    } else {
+      connect(f, terrace, 'bath', 3) || connect(f, terrace, 'hall', 3) || connect(f, terrace, 'bed2', 3);
+    }
+    // Bedroom wing.
+    connect(f, 'hall', 'bed2', 3);
+    connect(f, 'bed2', f === 0 ? 'bed3' : 'utility', 3) || connect(f, 'hall', f === 0 ? 'bed3' : 'utility', 3);
+    connect(f, 'master', 'dining', 3) || connect(f, 'master', 'kitchen', 3) || connect(f, 'master', f === 0 ? 'bed3' : 'utility', 3);
+    // Front entrance: a door on any exterior wall of the foyer (prefer the west road side).
     const entryId = `${f}-foyer`;
-    const entrance = model.walls.find(w => w.rooms.length === 1 && w.rooms[0] === entryId && w.x1 === A && w.x2 === A)!;
-    entrance.openings.push({ offset: length(entrance) / 2, width: 3.5, bottom: 0, height: 7.5, kind: 'door' });
-    model.connections.push({ from: 'outside', to: entryId, floor: f });
-    for (const r of model.rooms.filter(r => r.floor === f && r.use !== 'hall')) {
-      const candidates = model.walls.filter(w => w.rooms.length === 1 && w.rooms[0] === r.id && !w.openings.length && length(w) > 4);
-      const w = candidates.sort((a, b) => length(b) - length(a))[0];
-      if (w) w.openings.push({ offset: length(w) / 2, width: r.use === 'bath' ? 2 : 4, bottom: r.use === 'bath' ? 6 : 3, height: r.use === 'bath' ? 2 : 4, kind: 'window' });
+    const foyerExt = model.walls.filter(w => w.rooms.length === 1 && w.rooms[0] === entryId && length(w) > 2.5);
+    const entrance = foyerExt.sort((a, b) => {
+      const aWest = Math.abs(a.x1 - model.house.x) < 1e-6 && Math.abs(a.x2 - model.house.x) < 1e-6 ? 1 : 0;
+      const bWest = Math.abs(b.x1 - model.house.x) < 1e-6 && Math.abs(b.x2 - model.house.x) < 1e-6 ? 1 : 0;
+      return (bWest - aWest) || (length(b) - length(a));
+    })[0];
+    if (entrance) {
+      entrance.openings.push({ offset: length(entrance) / 2, width: Math.min(3.5, length(entrance) - 1), bottom: 0, height: 7.5, kind: 'door' });
+      model.connections.push({ from: 'outside', to: entryId, floor: f });
     }
   }
-  let serial = 0;
-  const furniture = (catalog: string, x: number, z: number, floor: number, rotation = 0, color?: string) => model.furniture.push({ id: `f-${serial++}`, catalog, x, z, floor, rotation, color });
-  for (const r of model.rooms) {
-    const x = r.x, z = r.z, f = r.floor;
-    if (r.use === 'bedroom') {
-      furniture('bed_queen', x + r.w / 2, z + 4.3, f, 0, '#b79271');
-      furniture('wardrobe', x + 3, z + r.d - 1.4, f, 0, '#80664e');
-      furniture('nightstand', x + r.w - 1.5, z + 3.2, f);
-    } else if (r.use === 'living') {
-      furniture('sofa', x + r.w / 2, z + 2, f, 0, '#728776');
-      furniture('coffee_table', x + r.w / 2, z + 6, f);
-      furniture('tv_stand', x + r.w / 2, z + r.d - 1.2, f);
-    } else if (r.use === 'dining') {
-      furniture('dining_table', x + r.w / 2, z + r.d / 2, f);
-      for (const dx of [-2.6, 2.6]) for (const dz of [-1.5, 1.5]) furniture('dining_chair', x + r.w / 2 + dx, z + r.d / 2 + dz, f, dx > 0 ? -90 : 90);
-    } else if (r.use === 'kitchen') {
-      furniture('counter', x + r.w - 1.3, z + 3, f, 90, '#718170');
-      furniture('sink_k', x + r.w - 1.3, z + 6.1, f, 90);
-      furniture('counter', x + r.w - 1.3, z + 9.2, f, 90, '#718170');
-      furniture('stove', x + r.w - 1.3, z + r.d - 2, f, 90);
-      furniture('fridge', x + 2, z + r.d - 2, f);
-    } else if (r.use === 'bath') {
-      furniture('toilet', x + 1.5, z + 2, f);
-      furniture('sink_b', x + r.w - 1.4, z + 1.3, f);
-      furniture('shower', x + r.w - 1.8, z + r.d - 2, f);
-    } else if (r.id.endsWith('utility')) {
-      furniture(f === 0 ? 'washer_dryer' : 'desk', x + r.w - 2.5, z + 2, f);
-    } else if (r.id.endsWith('daily')) {
-      furniture('side_table', x + r.w / 2, z + 1.5, f);
-    }
-  }
-  // Park nose-in (rotation 0) so each car is ~6 ft wide × ~16 ft deep and sits in a
-  // tidy column near the west boundary, leaving the x=15 entrance walkway clear.
-  for (let i = 0; i < requirements.parking.cars; i++) furniture(i === 0 ? 'car_suv' : 'car_sedan', 6.5, 9 + i * 17, 0, 0, i === 0 ? '#f0ede5' : '#496579');
-  // Two-wheelers park nose-in (each ~2.6 ft wide) in the narrow lane between the
-  // car column (x≈3..10) and the entrance walkway (x=15), north of the Patnam reserve.
-  for (let i = 0; i < requirements.parking.twoWheelers; i++) furniture('motorcycle', 11 + i * 2.9, 20, 0, 0);
-  model.gardens = [
-    { x: 0, z: input.frontage - 10, w: input.depth, d: 10 },
-    { x: 18, z: 0, w: input.depth - 18, d: 4 },
-    { x: input.depth - 3, z: 4, w: 3, d: input.frontage - 14 }
-  ];
-  model.gardenArea = model.gardens.reduce((n, r) => n + area(r), 0);
-  model.footprint = area(model.house);
-  // Stairs keep their full tread sizes; bridge tracks the upper foyer on longer sites.
-  const entry = model.rooms.find(r => r.id === '1-foyer')!;
-  model.stair.z = entry.z + entry.d / 2 - 2;
-  const foyer = model.rooms.find(r => r.id === '0-foyer')!;
-  const foyerZ = foyer.z + foyer.d / 2; // walkway meets the foyer door
-  // Entrance walkway hugs the house (x 15..18) so it stays clear of the forecourt
-  // parking (cars at x≈8.5, two-wheelers at x≈3.8/11.2). A short spur reaches the stair.
-  model.paths = [
-    { x: 15, z: 1, w: 3, d: Math.max(3, foyerZ) + 1.5 },
-    { x: 0, z: model.stair.z - 1, w: 3, d: model.stair.d + 2 }
-  ];
-  return model;
 }
-export const length = (s: Segment) => Math.hypot(s.x2 - s.x1, s.z2 - s.z1);
-export const clearSize = (r: Space) => `${(r.w - .5).toFixed(1)} × ${(r.d - .5).toFixed(1)} ft`;
+
+// ── Windows on exterior room walls ──
+function placeWindows(model: HouseConcept) {
+  for (const f of [0, 1]) {
+    for (const r of model.rooms.filter(r => r.floor === f && r.use !== 'hall')) {
+      const wall = model.walls.filter(w => w.rooms.length === 1 && w.rooms[0] === r.id && !w.openings.length && length(w) > 4)
+        .sort((a, b) => length(b) - length(a))[0];
+      if (wall) {
+        const bath = r.use === 'bath';
+        wall.openings.push({ offset: length(wall) / 2, width: Math.min(bath ? 2 : 4, length(wall) - 1), bottom: bath ? 6 : 3, height: bath ? 2 : 4, kind: 'window' });
+      }
+    }
+  }
+}
+
+// ── Parametric furniture: sized to a fraction of the room, dropped if it won't fit ──
+function placeFurniture(model: HouseConcept) {
+  let serial = 0;
+  const add = (catalog: string, x: number, z: number, floor: number, rotation = 0, color?: string) =>
+    model.furniture.push({ id: `f-${serial++}`, catalog, x, z, floor, rotation, color });
+  // A piece fits only if the room has room for it plus clearance.
+  const fits = (r: Space, needW: number, needD: number) => r.w >= needW + 1 && r.d >= needD + 1;
+
+  for (const r of model.rooms) {
+    const cx = r.x + r.w / 2, f = r.floor;
+    if (r.use === 'bedroom') {
+      const isMaster = r.id.endsWith('master');
+      if (fits(r, isMaster ? 6.5 : 5, isMaster ? 7 : 6.5)) add('bed_queen', cx, r.z + (isMaster ? 4.5 : 4), f, 0, '#b79271');
+      if (fits(r, 9, 9)) add('wardrobe', r.x + 2, r.z + r.d - 1.6, f, 0, '#80664e');       // only if there's spare wall
+      if (fits(r, 7, 7)) add('nightstand', r.x + r.w - 1.4, r.z + 3, f);
+    } else if (r.use === 'living') {
+      if (fits(r, 6.5, 4)) add('sofa', cx, r.z + 2.2, f, 0, '#728776');
+      if (fits(r, 9, 9)) add('coffee_table', cx, r.z + 6, f);
+    } else if (r.use === 'dining') {
+      if (fits(r, 5, 5)) {
+        add('dining_table', cx, r.z + r.d / 2, f);
+        if (fits(r, 8, 8)) for (const dx of [-2.4, 2.4]) for (const dz of [-1.4, 1.4]) add('dining_chair', cx + dx, r.z + r.d / 2 + dz, f, dx > 0 ? -90 : 90);
+      }
+    } else if (r.use === 'kitchen') {
+      if (fits(r, 6, 6)) { add('counter', r.x + r.w - 1.3, r.z + 3, f, 90, '#718170'); add('stove', r.x + r.w - 1.3, r.z + r.d - 2, f, 90); add('fridge', r.x + 2, r.z + r.d - 2, f); }
+    } else if (r.use === 'bath') {
+      if (fits(r, 4, 4)) { add('toilet', r.x + 1.4, r.z + 2, f); add('sink_b', r.x + r.w - 1.3, r.z + 1.3, f); if (fits(r, 6, 6)) add('shower', r.x + r.w - 1.6, r.z + r.d - 2, f); }
+    } else if (r.use === 'utility') {
+      if (fits(r, 5, 5)) add(f === 0 ? 'washer_dryer' : 'desk', r.x + r.w - 2.5, r.z + 2, f);
+    }
+    // Pooja rooms: shrine handled parametrically in the scene; a small table if room allows.
+    if (r.id === '0-daily' && fits(r, 4, 4)) add('side_table', cx, r.z + 1.5, f);
+  }
+}
+
+// ── Outdoor: forecourt parking (per degraded counts), Patnam, gardens, stair, paths ──
+function placeParkingAndOutdoor(model: HouseConcept, input: SiteInput) {
+  let serial = model.furniture.length;
+  const add = (catalog: string, x: number, z: number, rotation = 0, color?: string) =>
+    model.furniture.push({ id: `p-${serial++}`, catalog, x, z, floor: 0, rotation, color });
+
+  const forecourtW = SETBACK.front;        // west forecourt depth (x 0..front)
+  const frontage = input.frontage;
+  // Cars nose-in in the west car lane (x≈1..7); each ~6 ft wide × ~16 ft deep,
+  // stacked along z with clearance. Bikes sit in a separate lane (x≈8.5..11) at a
+  // z band clear of the cars. Everything stays west of the entrance walkway.
+  const carLaneX = Math.max(3, forecourtW / 2 - 2);
+  for (let i = 0; i < model.parking.cars; i++) add(i === 0 ? 'car_suv' : 'car_sedan', carLaneX, 9 + i * 18, 0, i === 0 ? '#f0ede5' : '#496579');
+  const bikeZ = 9 + model.parking.cars * 18 + 3;   // start bikes past the last car
+  for (let i = 0; i < model.parking.bikes; i++) add('motorcycle', carLaneX - 1.5 + i * 3.2, bikeZ, 0);
+
+  // Patnam: outdoor drawing space in front, sized to the forecourt but capped.
+  const pSize = Math.min(12, forecourtW - 2, frontage * 0.2);
+  model.patnam = { x: 1, z: frontage - SETBACK.rear - pSize - 4, w: pSize, d: pSize };
+
+  // Dedicated external stair to the first floor, in the forecourt, clear of Patnam.
+  model.stair = { x: 2, z: 1, w: Math.min(9, forecourtW - 4), d: 16 };
+
+  model.gardens = [
+    { x: 0, z: frontage - SETBACK.rear, w: input.depth, d: SETBACK.rear },                 // rear strip (north)
+    { x: model.house.x + model.house.w, z: SETBACK.rear, w: SETBACK.side, d: model.house.d }, // east side strip
+  ].filter(g => g.w > 0.5 && g.d > 0.5);
+
+  const foyer = model.rooms.find(r => r.id === '0-foyer');
+  const foyerZ = foyer ? foyer.z + foyer.d / 2 : 8;
+  model.paths = [
+    { x: model.house.x - 3, z: 1, w: 3, d: Math.max(3, foyerZ) },  // walkway to the front door
+    { x: 0, z: model.stair.z, w: model.stair.w, d: 1 },            // stair approach
+  ];
+}
+
 export function roomReachability(model: HouseConcept, floor: number) {
   const seen = new Set(['outside']);
   let changed = true;
