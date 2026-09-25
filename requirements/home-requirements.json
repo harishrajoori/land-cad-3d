@@ -1,87 +1,121 @@
 {
-  "schema": "land-cad-3d/home-requirements",
-  "version": 1,
-  "id": "family-home",
-  "name": "Fixed family home requirements",
-  "scope": "Reuse across property options independently of plot dimensions. Change requirements only when the owner explicitly revises them.",
-  "fixed": {
+  "schema": "karimnagar-family-home/requirements",
+  "version": 2,
+  "updated": "2026-09-24",
+  "status": "owner brief for concept design; not construction approval",
+  "location": "Karimnagar, Telangana",
+  "selectedProperty": "properties/PROPERTY-1-WEST-80x50.md",
+  "households": {
     "structure": "G+1",
-    "households": {
-      "ground": "Self + family",
-      "first": "Brother + family"
-    },
-    "access": {
-      "separateEntrances": true,
-      "firstFloorDedicatedStair": true,
-      "sharedInternalAccess": false,
-      "firstFloorReachableWhileGroundHomeLocked": true
-    },
-    "parking": {
-      "cars": 2,
-      "twoWheelers": 2,
-      "scope": "Total across both households"
-    },
-    "roomProgram": {
-      "ground": {
-        "bedrooms": 3,
-        "spaces": ["Living / hall", "Kitchen", "Dining", "Daily pooja", "Mallanna pooja room", "Common bathroom"]
-      },
-      "first": {
-        "bedrooms": 2,
-        "spaces": ["Living / hall", "Kitchen", "Bathroom"]
-      },
-      "basis": "Existing saved household program retained as the baseline; extra rooms and bathroom counts remain undecided."
-    },
-    "mallannaPooja": {
-      "capacityPeople": 4,
-      "separateFromDailyPooja": true,
-      "raisedShrinePlatform": true,
-      "tableLikeSurface": true,
-      "pandal": { "pillarCount": 4, "decorated": true },
-      "prasadamSpace": "In front of the deity",
-      "peopleSpaceExcludesShrineAndOfferings": true,
-      "patnamInside": false
-    },
-    "outdoorPatnam": {
-      "location": "Outside, in front of the home",
-      "clearDrawingSpace": true,
-      "orientation": "Relative to the home's front, not a fixed compass direction"
-    },
-    "outdoorSpaces": ["Garden", "Children's play space"],
-    "designApproach": {
-      "localStyle": true,
-      "vaastuFollowing": true,
-      "notes": "Retain the owner's local-style and Vaastu requirements across plots; detailed style and consultant-specific rules remain to be agreed."
-    }
+    "groundFloor": "Owner and family",
+    "firstFloor": "Brother and family",
+    "independentEntrances": true,
+    "sharedInternalAccess": false,
+    "firstFloorReachableWhileGroundFloorLocked": true
   },
-  "plotSpecific": [
-    "Boundary dimensions and shape",
-    "Surveyed north bearing and road-facing direction",
-    "Road positions and widths",
-    "Location and applicable local requirements",
-    "Setbacks and buildable envelope",
-    "Building footprint and room dimensions",
-    "Entrance, staircase and parking positions",
-    "Garden and play-space areas",
-    "Outdoor Patnam dimensions and its relationship to parking",
-    "Shrine platform, table and pandal dimensions"
-  ],
-  "unresolved": [
-    "Extra rooms, attached bathrooms, utility, storage, balcony and lift provision",
-    "Detailed local-style references and Vaastu preferences or permitted exceptions",
-    "Vehicle sizes, parking allocation, covered parking and gate arrangement",
-    "Whether garden and play space are shared between households",
-    "Patnam drawing dimensions and surrounding circulation",
-    "Whether the four-person indoor pooja capacity includes the pujari",
-    "Shrine heights, materials, deity facing and whether table and platform are separate",
-    "Accessibility needs, budget and construction phasing"
+  "groundFloor": {
+    "bedrooms": 2,
+    "office": 1,
+    "spaces": [
+      "North-facing entrance foyer",
+      "Open living and dining",
+      "Separate kitchen and compact utility",
+      "Daily pooja room",
+      "Mallanna pooja room",
+      "Common bathroom",
+      "Master dressing and attached bathroom",
+      "Short common/private circulation"
+    ]
+  },
+  "firstFloor": {
+    "programStatus": "flexible; design using best architectural judgement",
+    "defaultConcept": "Independent 2BHK with living/dining, kitchen, common bathroom, master attached bathroom, pooja/quiet room and useful terrace",
+    "mustCoordinate": [
+      "Independent external stair arrival",
+      "Structural wall and column alignment",
+      "Kitchen and wet-area stacking",
+      "No toilet above the ground-floor pooja rooms",
+      "Privacy between households"
+    ]
+  },
+  "access": {
+    "property1MainDoor": "Physically on north wall and facing north",
+    "property1Approach": "West/NW pedestrian gate, then east along north-side path, then enter south through north-facing door",
+    "southRoadPreference": "For a future south-road property, investigate an east-facing house main door",
+    "externalStair": "Dedicated, independently gated and outside ground-floor private circulation",
+    "noBedroomAsPassage": true
+  },
+  "parking": {
+    "cars": 1,
+    "twoWheelers": 2,
+    "mustNotBlock": ["Pedestrian approach", "Independent stair gate", "House entrances"]
+  },
+  "outdoor": {
+    "required": ["Garden", "Children's play/open space"],
+    "dedicatedPatnamArea": false,
+    "patnamNote": "No permanent reserved area; any family ritual use is temporary and coordinated separately"
+  },
+  "vaastuPreferences": {
+    "northReference": "Surveyed true north",
+    "masterBedroom": "SW",
+    "kitchen": "SE",
+    "dailyPooja": "NE",
+    "mallannaPooja": "NE",
+    "bedroom2": ["W", "NW"],
+    "office": ["N", "NW"],
+    "centre": "Comparatively open/light",
+    "stairCandidate": ["W", "SW"],
+    "avoidToilet": ["NE", "Centre"],
+    "poojaBathroomSharedWall": false,
+    "exactEntrancePada": "Consultant confirmation required",
+    "exactToiletSubzones": "Consultant confirmation required"
+  },
+  "mallannaPooja": {
+    "separateFromDailyPooja": true,
+    "capacityPeople": 4,
+    "peopleSpaceExcludesShrineAndOfferings": true,
+    "raisedPlatform": true,
+    "tableLikeSurface": true,
+    "pandalPillars": 4,
+    "pandalPillarsAreStructural": false,
+    "prasadamSpace": "In front of deity",
+    "patnamInside": false,
+    "needsFamilyOrPujariConfirmation": [
+      "Deity/image dimensions and facing",
+      "Platform height and footprint",
+      "Pillar spacing and canopy",
+      "Whether four people includes pujari"
+    ]
+  },
+  "planningPriorities": [
+    "Legal and safety constraints",
+    "Usable circulation and furniture movement",
+    "Daylight and cross-ventilation",
+    "Household privacy and independent access",
+    "Vaastu preferences",
+    "Visual style"
   ],
   "adaptationPolicy": {
-    "preserveFixedRequirements": true,
-    "silentlyDropRequiredSpaces": false,
-    "silentlyReduceCapacity": false,
-    "onConflict": "Show which requirements cannot fit the plot and present options for owner review. Do not imply that every plot can accommodate the same brief.",
-    "northReference": "Reassess Vaastu placement against actual north when the plot or orientation changes.",
-    "implementationStatus": "Requirements record for planning. Current renderers do not yet load or enforce this profile automatically."
-  }
+    "preserveOwnerDecisions": true,
+    "doNotSilently": [
+      "Add or remove rooms",
+      "Merge pooja rooms",
+      "Change entrance facing",
+      "Relocate kitchen or master zones",
+      "Change parking count",
+      "Create shared household access"
+    ],
+    "roomDimensions": "Targets may adjust for a better plan; report all changes",
+    "onConflict": "Show alternatives and trade-offs; do not fabricate compliance"
+  },
+  "professionalHoldPoints": [
+    "Surveyed boundary and true north",
+    "Title/layout status and authority jurisdiction",
+    "KMC/TG-bPASS setbacks, coverage, floors, height, parking and road widening",
+    "Structural grid/foundation/seismic design",
+    "Stair safety and headroom",
+    "Plumbing, drainage, electrical and waterproofing",
+    "Family-selected Vaastu consultant",
+    "Mallanna/Oggu pujari ritual details"
+  ]
 }

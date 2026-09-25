@@ -1,71 +1,84 @@
-# Land CAD 3D — Vaastu Home Design & Walkthrough
+# Karimnagar Family Home — AI Design Workspace
 
-Tools to explore plots, generate a schematic home (G+1) using Vaastu preferences, walk through
-it in 3D, and export plans for your engineer and Vaastu consultant.
+A focused repository for developing, reviewing and visualizing a family-home concept using GPT-6 Astra, Gemini, professional architects/engineers and the family's Vaastu consultant.
 
-This repo now has **two parts**:
+This repository contains **knowledge, requirements, factual property records, prompts, review checklists and design outputs**. It no longer contains the experimental 3D application or generated model engine.
 
-## 1. `openplan3d/` — the main app (recommended)
+## Start here
 
-A full 2D/3D floor-plan editor (SvelteKit + Three.js), adopted from the MIT-licensed
-[openPlan3D](https://github.com/laanlabs/openPlan3D) and **extended with a Vaastu layer**.
+1. Read the current [Owner Design Brief](DESIGN-BRIEF.md).
+2. Use the [Common Design Rules](requirements/COMMON-DESIGN-RULES.md) for all recurring architecture, access, Vaastu, civil and visualization requirements.
+3. Read the [Owner Decision Log](reviews/DECISION-LOG.md); later decisions override old generated content.
+4. Read the selected factual property record in [`properties/`](properties/README.md).
+5. Use [`knowledge/VAASTU-KNOWLEDGE.md`](knowledge/VAASTU-KNOWLEDGE.md) as the canonical Vaastu/source reference.
+6. Ask GPT-6 Astra for the strongest self-audited architecture concept with [`prompts/01-GPT6-ASTRA-ARCHITECTURE.md`](prompts/01-GPT6-ASTRA-ARCHITECTURE.md). Astra internally compares alternatives before presenting its recommendation.
+7. Audit the selected option once with [`prompts/02-GPT6-ASTRA-AUDIT.md`](prompts/02-GPT6-ASTRA-AUDIT.md) and [`reviews/DESIGN-CHECKLIST.md`](reviews/DESIGN-CHECKLIST.md).
+8. After owner approval, use [`prompts/03-GEMINI-VISUALIZATION.md`](prompts/03-GEMINI-VISUALIZATION.md) for plans, cutaways, exteriors and interiors.
+9. Store outputs under [`designs/`](designs/README.md) with one revision identifier.
 
-What it gives us out of the box: a real 2D editor, instant 3D view, **first-person
-walkthrough**, **multiple floors (G+1)**, doors/windows/stairs/furniture, materials
-and lighting, and exports to **DXF, PDF, SVG, PNG, JSON** — plus an optional
-**AI photoreal render** (OpenAI Responses / Gemini, browser-only keys).
+## Current project basis
 
-Our additions:
-- `src/lib/utils/vaastuTemplates.ts` — generates **G+1 Vaastu house plans** with
-  rooms auto-placed by the Vastu Purush Mandala (kitchen SE, master SW, pooja NE,
-  living N, toilets NW, staircase S). Registered in the template picker.
-- Three ready templates for the real Karimnagar properties:
-  - **Property 1** — West-facing 80×50 ft
-  - **Property 2** — Corner (W+S roads) 50×39 ft
-  - **Property 3** — North-facing 51×47 ft
-- Each generates a two-floor plan: ground = 3 BHK + daily pooja (NE) + large
-  occasional pooja + common bath; first floor = brother's unit.
+- Selected site: Property 1, 50 ft E–W × 80 ft N–S, west road recorded at 20 ft.
+- G+1, independent households and external first-floor stair.
+- Ground floor: two bedrooms plus office.
+- Property 1 ground main door: north-facing, approached from the west/NW gate through the north side.
+- Separate daily and Mallanna pooja rooms in NE; no bathroom shared wall.
+- Kitchen SE; master sleeping zone SW; Bedroom 2 W/NW; office N/NW.
+- One car + two two-wheelers.
+- Garden and children's play/open space.
+- No dedicated/permanent Patnam area.
+- First-floor detailed programme is flexible; independent 2BHK is the current default direction.
 
-### Run it
+The machine-readable version is [`requirements/home-requirements.json`](requirements/home-requirements.json).
 
+## Repository map
+
+```text
+README.md
+DESIGN-BRIEF.md
+requirements/
+  COMMON-DESIGN-RULES.md
+  home-requirements.json
+properties/
+  README.md
+  PROPERTY-1-WEST-80x50.md
+  PROPERTY-2-CORNER-WEST-SOUTH-50x39.md
+  PROPERTY-3-NORTH-51x47.md
+knowledge/
+  VAASTU-KNOWLEDGE.md                 # canonical
+  TELUGU-TELANGANA-VAASTU.md          # supplementary checklist
+  sources/                            # locally preserved reference PDFs
+prompts/
+  README.md
+  01-GPT6-ASTRA-ARCHITECTURE.md
+  02-GPT6-ASTRA-AUDIT.md
+  03-GEMINI-VISUALIZATION.md
+reviews/
+  DECISION-LOG.md
+  DESIGN-CHECKLIST.md
+designs/
+  README.md
+  property-1/README.md
+.kiro/steering/
+  home-design.md                      # auto-context for Kiro/Astra
 ```
-cd openplan3d
-npm install
-npm run dev        # http://localhost:5173
-```
 
-Open the app, click **New Project → Templates**, and pick one of the 🕉️ Vaastu
-templates. Toggle 3D and walkthrough, add a second floor, and export for your
-engineer. For photoreal renders, add an OpenAI key in Settings → AI (use a
-Responses model such as gpt-4.1, or GPT Image 2.5 where supported).
+## Working principles
 
-### Vaastu logic
+- An AI-generated image is not architecture or construction proof.
+- Generate multiple concept options, select one, then perform one independent audit.
+- Use dimensioned geometry as the source of truth for every later image.
+- Do not ask Gemini to invent/certify floor-plan geometry.
+- Separate owner requirements, source guidance, design proposals and professional hold points.
+- Do not silently change room counts, access, parking, pooja arrangement or entrance facing.
+- Survey, municipal, structural, services and consultant review remain mandatory before construction.
 
-Vaastu zones are **absolute** compass directions (North is up in the plan), so a
-kitchen always lands in the real South-East corner regardless of facing. The plot's
-`facing` decides which road-side wall carries the main entrance. Zone→cell mapping
-and the G+1 generator are covered by `tests/vaastu-templates.test.ts`.
+## Professional handoff
 
-## 2. `index.html` — the original single-file prototype
+The selected owner concept should eventually include a surveyed/legal site plan, dimensioned ground/first/roof plans, elevations, sections, room and opening schedules, parking/stair geometry, column/service concept, Vaastu decisions/exceptions and coordinated visualization references.
 
-The earlier zero-dependency Three.js prototype (parametric plot + Vaastu overlay +
-walkthrough + DXF + reports + GPT Image hook). Kept as reference. See `models/` for
-the property spec files.
+Professionals may adjust columns, wall thicknesses, shafts, stair geometry, doors/windows and local wall positions. Major changes to entrance facing, room programme, kitchen/master/pooja zones or household independence require owner approval.
 
-## Honest scope
+## Current status
 
-Both are **decision/exploration** tools. The Vaastu templates are preliminary
-zone-based sketches, not validated house designs. They currently omit setbacks
-and internal doors, overlap the south bedroom with stairs, and do not preserve all
-room preferences from the saved property files. Dimensions use real units, but
-this does not establish usability, Vaastu compliance, or construction readiness.
-Validate circulation, structure, services, local requirements, and your chosen
-Vaastu preferences with your engineer and consultant.
-
-See [the house planning and engineer discussion brief](DESIGN-BRIEF.md) for
-recorded requirements, unresolved decisions, and the next implementation priorities.
-
-## Licenses & attribution
-
-`openplan3d/` retains its MIT `LICENSE` (© the openPlan3D authors). Our additions are
-under the same terms.
+Knowledge and requirements are consolidated. No floor plan is currently marked owner-approved. Start a fresh architecture-options cycle using Prompt 01 rather than repairing old generated images.
